@@ -239,8 +239,8 @@ public actor UsageStore {
 
         public var roots: [URL] {
             switch self {
-            case .codex: UsageStore.codexRoots
-            case .claude: UsageStore.claudeRoots
+            case .codex: UsageStore.codexRoots + RemoteLogs.roots(.codex)
+            case .claude: UsageStore.claudeRoots + RemoteLogs.roots(.claude)
             }
         }
     }
@@ -371,6 +371,12 @@ public actor UsageStore {
                 try Self.walkJSONL(root.path) { path, stamp in
                     if try isChanged(path, stamp) { changed.append((path, stamp)) }
                 }
+            }
+        }
+        // `LogWatcher` sees only this Mac, so remote logs are listed on every ingest.
+        for root in roots where only != nil && RemoteLogs.isRemote(root.path) {
+            try Self.walkJSONL(root.path) { path, stamp in
+                if try isChanged(path, stamp) { changed.append((path, stamp)) }
             }
         }
         // Oldest first, so a fork's parent is ingested before the fork when both are new.
@@ -1095,6 +1101,7 @@ public actor UsageStore {
     /// Recursively visits `*.jsonl` files with one stat each, via fts(3): no Foundation
     /// objects per file, which matters with ~100k session files.
     static func walkJSONL(_ root: String, _ visit: (String, FileStamp) throws -> Void) throws {
+        if RemoteLogs.isRemote(root) { return try RemoteLogs.walk(root, visit) }
         guard FileManager.default.fileExists(atPath: root) else { return }
         let rootC = strdup(root)
         defer { free(rootC) }
@@ -1160,14 +1167,15 @@ enum JSONLReader {
     static func forEachLine(
         url: URL, from start: Int64, until: Int64? = nil, _ body: (UnsafeRawBufferPointer) -> Void) throws -> Int64
     {
-        let fd = open(url.path, O_RDONLY)
+        let remote = try RemoteLogs.open(url.path, from: start)
+        let fd = remote?.fd ?? open(url.path, O_RDONLY)
         guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
-        defer { close(fd) }
+        defer { close(fd); remote?.cancel() }
         // An offset inside a line only occurs while skipping an oversized line. Recover that
         // state from the preceding byte, without rereading its already discarded prefix.
         var skipping = false
         if start > 0 {
-            guard lseek(fd, off_t(start - 1), SEEK_SET) == off_t(start - 1) else {
+            guard remote != nil || lseek(fd, off_t(start - 1), SEEK_SET) == off_t(start - 1) else {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
             }
             var previous: UInt8 = 0
@@ -1175,7 +1183,7 @@ enum JSONLReader {
             guard n >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
             if n == 1 { skipping = previous != 0x0A }
         }
-        guard lseek(fd, off_t(start), SEEK_SET) == off_t(start) else {
+        guard remote != nil || lseek(fd, off_t(start), SEEK_SET) == off_t(start) else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
 
@@ -1225,6 +1233,7 @@ enum JSONLReader {
                 filled = rest
             }
         }
+        try remote?.finish(drained: !reachedLimit)
         return consumedOffset
     }
 }
