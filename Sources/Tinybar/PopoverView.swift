@@ -324,6 +324,7 @@ private struct OverviewRow: View {
                             .help(model.isAuto ? "Shown in the menu bar: it's the closest to running out" : "Pinned to the menu bar")
                             .accessibilityLabel("Shown in the menu bar")
                     }
+                    OverviewAlerts(model: model, id: id)
                 }
                 subtitle(state: state, snapshot: snapshot, binding: binding)
                     .font(.system(size: 12))
@@ -352,17 +353,11 @@ private struct OverviewRow: View {
 
     @ViewBuilder
     private func subtitle(state: ProviderState?, snapshot: ProviderSnapshot?, binding: LimitWindow?) -> some View {
-        if let error = state?.error {
+        // Errors and incidents are marks beside the name (`OverviewAlerts`); usage keeps this line.
+        if let error = state?.error, snapshot == nil {
             Label(StaleText.short(id: id, error: error), systemImage: "exclamationmark.triangle.fill")
                 .labelStyle(TightLabel())
                 .foregroundStyle(.orange)
-        } else if let incident = model.loudIncident(id) {
-            HStack(spacing: 3) {
-                StatusLight(severity: incident.severity, size: 5)
-                Text(incident.title)
-            }
-            .foregroundStyle(incident.severity == .maintenance ? AnyShapeStyle(.secondary) : AnyShapeStyle(incident.severity.color))
-            .help(incident.summary)
         } else if let runOut = snapshot?.firstRunOut(includeModelSpecific: false) {
             Text("\(runOut.window.title) runs out in \(Format.countdown(to: runOut.at))")
                 .foregroundStyle(.orange)
