@@ -1093,6 +1093,7 @@ private struct Footer: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            ForkLink()
             if model.updater.release != nil {
                 UpdatePill(updater: model.updater)
             } else {
@@ -1100,7 +1101,8 @@ private struct Footer: View {
                     if model.isRefreshing {
                         Text("Checking…")
                     } else if let updated = model.lastUpdated {
-                        Text("Checked \(updated.formatted(date: .omitted, time: .shortened))")
+                        // Just the time: the fork's link takes the room "Checked" had.
+                        Text(updated.formatted(date: .omitted, time: .shortened)).help("Last checked")
                     }
                 }
                 .font(.system(size: 11))
@@ -1240,6 +1242,7 @@ private struct SettingsPage: View {
     var body: some View {
         @Bindable var settings = model.settings
         VStack(alignment: .leading, spacing: 18) {
+            ForkNote()
             SettingsSection("Subscriptions", footer: "Tinybar turns on each subscription it finds a login for.") {
                 ForEach(ProviderID.allCases, id: \.self) { id in
                     SubscriptionRow(model: model, id: id, first: id == ProviderID.allCases.first) { open(id) }
