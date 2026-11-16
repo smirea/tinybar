@@ -21,6 +21,26 @@ struct ForkLink: View {
     }
 }
 
+/// An overview row's errors and incidents as marks beside its name, so the line below keeps showing
+/// usage. The details are in the tooltips and on the provider's page.
+struct OverviewAlerts: View {
+    let model: AppModel
+    let id: ProviderID
+
+    var body: some View {
+        if let error = model.providers[id]?.error {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.orange)
+                .help(StaleText.short(id: id, error: error))
+        }
+        if let incident = model.loudIncident(id) {
+            StatusLight(severity: incident.severity, size: 5)
+                .help("\(incident.title)\n\(incident.summary)")
+        }
+    }
+}
+
 /// Settings' top note on what the fork adds.
 struct ForkNote: View {
     var body: some View {
