@@ -156,7 +156,7 @@ view, so switching never resizes anything. Only the page in view is built, and t
      Account's segment is the brightest and a Stale Account's is dimmed. Pointing at a segment names
      the Account. No more rows, however many Accounts.
    - Usage for all Providers (Today, 7d, 30d): total tokens, Theoretical Cost, a daily chart stacked
-     by Provider, and top models and Projects, each bar split by Provider.
+     by Provider, and top models, Projects and Machines, each bar split by Provider.
    - Colours come from each logo: Claude orange, Codex monochrome (black or white), Gemini its
      four-colour spark, Cursor grey, and OpenCode teal, Copilot purple and Grok blue, as their marks are monochrome too.
 2. **Provider page**:
@@ -180,7 +180,7 @@ view, so switching never resizes anything. Only the page in view is built, and t
      as usual.
    - While `cswap` is installed and not turned on, one line under the Claude page's limits, "claude-swap
      is installed. Show its accounts", which turns it on. It goes away for good once used or dismissed.
-   - That Provider's usage only: tokens, cost, chart, top models and Projects. Today is provisional.
+   - That Provider's usage only: tokens, cost, chart, top models, Projects and Machines. Today is provisional.
      With several Accounts it covers all of them and says so.
 3. **Footer**: last check time (or the update pill, §11), check now (⌘R), Stats (⌘S, §13), how Tinybar counts (⌘I), settings
    (⌘,), quit (⌘Q). "How Tinybar counts" is a page like Settings: where limits, tokens, API
@@ -237,13 +237,13 @@ Parsing rules must be verified against CodexBar's `Sources/CodexBarCore/Vendored
 - Stored daily totals survive the CLIs deleting old logs (Claude Code deletes after 30 days by default).
 
 ### Store (SQLite, `~/Library/Application Support/Tinybar/usage.sqlite`; ADR 0003)
-- `daily_usage(day, provider, model, project, input, output, cache_write, cache_read)`, primary key (day, provider, model, project).
+- `daily_usage(day, provider, model, project, machine, input, output, cache_write, cache_read)`, primary key (day, provider, model, project, machine). `machine` is the SSH host whose logs the usage was read from, or empty for this Mac.
 - `file_cursor(path, inode, size, mtime, offset)`.
-- `claude_message(id, …, stats)`: the tokens and Activity counted per Claude message id, for de-duplication. Ids older than 90 days are pruned once a day; daily totals are kept.
+- `claude_message(id, …, machine, stats)`: the tokens and Activity counted per Claude message id, for de-duplication. Ids older than 90 days are pruned once a day; daily totals are kept.
 - `opencode_message(key)`: the OpenCode responses already counted, kept for good as a fork can copy a message of any age.
 - `daily_stat(day, provider, model, key, value)`: Activity counters (§13, ADR 0006), sums except `context.max`. Every counter is kept per model, including `hour.HH` (responses started in that hour) and `tokens.hour.HH` (their tokens), `cmd.*` (Shell Commands: `cmd.prog.<program>`, `cmd.git.<subcommand>` and habit counts) and `ext.added|removed|edits.<extension>`.
 - `claude_event(id, day)`: Claude Prompts, edit results and Compactions already counted, pruned with message ids.
-- `daily_long_context(day, provider, model, project, band, …tokens)`: the part of `daily_usage` from long requests, for Long-context Prices (§10).
+- `daily_long_context(day, provider, model, project, machine, band, …tokens)`: the part of `daily_usage` from long requests, for Long-context Prices (§10).
 - `limit_reading(provider, account, window, resets_at, duration, plan, used_bp, read_at, plan_changed)`: the highest share of each weekly Limit Window seen per Account, the newest 8 per Account and window (§14). `account` is the hash from §15, empty for readings from before Accounts.
 
 ### Day boundary
@@ -256,6 +256,7 @@ Parsing rules must be verified against CodexBar's `Sources/CodexBarCore/Vendored
 - Projects are identified by repo root path and displayed by folder name.
 - A coding agent's worktree folder (`~/.t3/worktrees/<repo>/<id>`, `~/.codex/worktrees/<id>/<repo>`) that no longer exists is attributed to `<repo>` by name; a T3 scratch folder (`~/.t3/scratch/…`) has no Project.
 - Otherwise, if the path no longer exists, use its last path component.
+- Usage read from another machine's logs before schema 10 was filed as this Mac's. It is moved once to that machine by reading those logs again up to what had been counted: per Claude message while its id is kept, otherwise at most what this Mac has under the same day, model and project.
 - Usage filed earlier under a deleted agent worktree's folder name is moved once to its repo, read back from the logs: per Claude message while its id is kept, otherwise per day and model where that folder name meant one repo.
 - If no repository is found, file it under "No project".
 - Cache path→project lookups in memory.

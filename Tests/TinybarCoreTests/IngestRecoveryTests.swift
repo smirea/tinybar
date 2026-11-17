@@ -66,7 +66,7 @@ private func recoveryLog(model: String = "gpt-test", output: Int = 1) -> String 
     try db.exec("""
     PRAGMA user_version = 4;
     INSERT INTO daily_stat VALUES ('2026-09-25', 'claude', 'test', 'responses', 1);
-    INSERT INTO claude_message VALUES ('m', '2026-09-25', 'claude', 'test', '', 300000, 1, 0, 0, '{}');
+    INSERT INTO claude_message (id, day, provider, model, project, input, output, cache_write, cache_read, stats) VALUES ('m', '2026-09-25', 'claude', 'test', '', 300000, 1, 0, 0, '{}');
     CREATE TRIGGER fail_migration BEFORE UPDATE ON claude_message
     BEGIN SELECT RAISE(ABORT, 'injected failure'); END;
     """)
@@ -76,7 +76,7 @@ private func recoveryLog(model: String = "gpt-test", output: Int = 1) -> String 
     #expect(try db.run("SELECT count(*) FROM daily_long_context").first?.first?.int == 0)
     try db.exec("DROP TRIGGER fail_migration")
     _ = try UsageStore(path: url)
-    #expect(try db.run("PRAGMA user_version").first?.first?.int == 9)
+    #expect(try db.run("PRAGMA user_version").first?.first?.int == 10)
 }
 
 @Test func completedSchemaSixBackfillsRemainUntouched() async throws {

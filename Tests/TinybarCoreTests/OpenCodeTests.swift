@@ -813,11 +813,11 @@ private func openCodeStatus(go: String, reason: String = "none", free: String = 
     try db.exec("""
     DROP TABLE opencode_message;
     PRAGMA user_version = 7;
-    INSERT INTO claude_message VALUES ('m', '2026-09-25', 'claude', 'test', '', 300000, 1, 0, 0, '{}');
-    INSERT INTO daily_long_context VALUES ('2026-09-25', 'codex', 'kept', '', 272000, 5, 5, 5, 5);
+    INSERT INTO claude_message (id, day, provider, model, project, input, output, cache_write, cache_read, stats) VALUES ('m', '2026-09-25', 'claude', 'test', '', 300000, 1, 0, 0, '{}');
+    INSERT INTO daily_long_context (day, provider, model, project, band, input, output, cache_write, cache_read) VALUES ('2026-09-25', 'codex', 'kept', '', 272000, 5, 5, 5, 5);
     """)
     _ = try fixture.store()
-    #expect(try db.run("PRAGMA user_version").first?.first?.int == 9)
+    #expect(try db.run("PRAGMA user_version").first?.first?.int == 10)
     #expect(try db.run("SELECT count(*) FROM opencode_message").first?.first?.int == 0)
     #expect(try db.run("SELECT model FROM daily_long_context").map { $0[0].text } == ["kept"])
 }

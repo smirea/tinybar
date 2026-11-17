@@ -33,6 +33,11 @@ enum RemoteLogs {
         path.hasPrefix(prefix)
     }
 
+    /// The `RemoteHosts` host a log is on, or `RemoteHosts.thisMac`.
+    static func machine(of path: String) -> String {
+        split(path)?.host ?? RemoteHosts.thisMac
+    }
+
     /// Visits the `*.jsonl` files under a remote root like `UsageStore.walkJSONL`, skipping hidden folders.
     /// An unreachable host has no files.
     static func walk(_ root: String, _ visit: (String, UsageStore.FileStamp) throws -> Void) throws {

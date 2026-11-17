@@ -516,6 +516,7 @@ final class AppModel {
                 if !((try? await store.hasCompletedOpenCodeImport()) ?? true) { jobs.append(.importOpenCode) }
                 if !((try? await store.unreadLogRoots().isEmpty) ?? true) { jobs.append(.importLogFolders) }
                 if !((try? await store.hasRepairedWorktreeProjects()) ?? true) { jobs.append(.repairWorktreeProjects) }
+                if !((try? await store.hasAssignedMachines()) ?? true) { jobs.append(.assignMachines) }
             }
             for job in jobs {
                 guard !isAsleep, !isLocked else { return }

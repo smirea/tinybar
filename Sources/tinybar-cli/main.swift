@@ -159,6 +159,13 @@ func repairProjects() async throws {
     print(String(format: "worktree projects repaired in %.1fs", Date().timeIntervalSince(start)))
 }
 
+func assignMachines() async throws {
+    let store = try UsageStore(path: dbURL)
+    let start = Date()
+    try await store.assignMachines()
+    print(String(format: "machines assigned in %.1fs", Date().timeIntervalSince(start)))
+}
+
 func printStatus() async {
     for id in ProviderID.allCases where StatusFeed.hasFeed(id) {
         do {
@@ -181,6 +188,7 @@ case "stats": try await stats()
 case "backfill": try await backfill()
 case "backfill-long": try await backfillLong()
 case "repair-projects": try await repairProjects()
+case "assign-machines": try await assignMachines()
 case "status": await printStatus()
 default: print("usage: tinybar-cli [limits [--browser] [--opted-in] [--provider=<id>]|cookies|ingest|usage|stats|backfill|backfill-long|status] [db-path]")
 }

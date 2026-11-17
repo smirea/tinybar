@@ -731,7 +731,7 @@ private func weekly(used: Double, resets: Date, read: Date, plan: String? = "Max
     PRAGMA user_version = \(version);
     """)
     let store = try UsageStore(path: url)
-    #expect(try db.run("PRAGMA user_version").first?.first?.int == 9)
+    #expect(try db.run("PRAGMA user_version").first?.first?.int == 10)
     let readings = try await store.limitReadings(provider: .claude)
     #expect(readings.count == 1)
     #expect(readings[0].account == "")

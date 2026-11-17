@@ -30,7 +30,7 @@ struct PopoverView: View {
     static let width: CGFloat = 344
     /// Fixed so the popover keeps its size (and its arrow its place) across pages. Longer pages
     /// scroll inside it.
-    static let contentHeight: CGFloat = 540
+    static let contentHeight: CGFloat = PopoverSnapshotOptions.tall ? 1600 : 540
 
     init(model: AppModel, page: Page = .overview, subscription: ProviderID = .claude) {
         self.model = model
@@ -1162,6 +1162,9 @@ private struct UsagePanel: View {
                     Breakdown(
                         title: "Projects", lines: PopoverSnapshotOptions.projects(summary.projects),
                         total: summary.totalTokens)
+                    if !RemoteHosts.all.isEmpty {
+                        Breakdown(title: "Machines", lines: summary.machines, total: summary.totalTokens)
+                    }
                 }
                 .padding(14)
                 .platter(cornerRadius: 16)
