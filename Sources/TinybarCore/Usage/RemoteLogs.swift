@@ -88,6 +88,11 @@ enum RemoteLogs {
         }
     }
 
+    /// Whether `host` answers now, ignoring an earlier failure.
+    static func isReachable(_ host: String) -> Bool {
+        output(host, "exit 0") != nil
+    }
+
     private static func isUp(_ host: String) -> Bool {
         downUntil.withLock { ($0[host] ?? .distantPast) < Date() }
     }

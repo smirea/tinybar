@@ -254,7 +254,9 @@ Parsing rules must be verified against CodexBar's `Sources/CodexBarCore/Vendored
 - Walk up from the record's working directory to the nearest folder containing `.git`.
 - A Worktree (`.git` file pointing into another repo) is attributed to its main repository.
 - Projects are identified by repo root path and displayed by folder name.
-- If the path no longer exists, use its last path component.
+- A coding agent's worktree folder (`~/.t3/worktrees/<repo>/<id>`, `~/.codex/worktrees/<id>/<repo>`) that no longer exists is attributed to `<repo>` by name; a T3 scratch folder (`~/.t3/scratch/…`) has no Project.
+- Otherwise, if the path no longer exists, use its last path component.
+- Usage filed earlier under a deleted agent worktree's folder name is moved once to its repo, read back from the logs: per Claude message while its id is kept, otherwise per day and model where that folder name meant one repo.
 - If no repository is found, file it under "No project".
 - Cache path→project lookups in memory.
 

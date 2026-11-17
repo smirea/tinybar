@@ -515,6 +515,7 @@ final class AppModel {
                 if !((try? await store.hasCompletedLongContextBackfill()) ?? true) { jobs.append(.backfillLongContext) }
                 if !((try? await store.hasCompletedOpenCodeImport()) ?? true) { jobs.append(.importOpenCode) }
                 if !((try? await store.unreadLogRoots().isEmpty) ?? true) { jobs.append(.importLogFolders) }
+                if !((try? await store.hasRepairedWorktreeProjects()) ?? true) { jobs.append(.repairWorktreeProjects) }
             }
             for job in jobs {
                 guard !isAsleep, !isLocked else { return }

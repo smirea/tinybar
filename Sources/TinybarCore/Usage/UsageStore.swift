@@ -35,8 +35,8 @@ public struct DailyStat: Sendable, Hashable {
 /// Persistent store of daily token totals plus per-file read cursors, so history survives CLIs
 /// deleting their logs and each ingest only reads appended bytes.
 public actor UsageStore {
-    private let db: SQLiteDB
-    private let projects = ProjectResolver()
+    let db: SQLiteDB
+    let projects = ProjectResolver()
     private static let schemaVersion: Int64 = 9
 
     public init(path: URL = Paths.appSupport.appendingPathComponent("usage.sqlite")) throws {
@@ -820,7 +820,7 @@ public actor UsageStore {
         }
     }
 
-    private func addDaily(day: String, provider: ProviderID, model: String, project: String, _ t: TokenCounts) throws {
+    func addDaily(day: String, provider: ProviderID, model: String, project: String, _ t: TokenCounts) throws {
         try db.run("""
         INSERT INTO daily_usage (day, provider, model, project, input, output, cache_write, cache_read)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -847,7 +847,7 @@ public actor UsageStore {
         return TokenCounts(input: values[0], output: values[1], cacheWrite: values[2], cacheRead: values[3])
     }
 
-    private func addLong(day: String, provider: ProviderID, model: String, project: String, band: Int64, _ t: TokenCounts) throws {
+    func addLong(day: String, provider: ProviderID, model: String, project: String, band: Int64, _ t: TokenCounts) throws {
         try db.run("""
         INSERT INTO daily_long_context (day, provider, model, project, band, input, output, cache_write, cache_read)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
