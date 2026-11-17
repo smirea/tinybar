@@ -8,6 +8,8 @@ usage of other machines, read over SSH without copying their logs.
   Their cursors use paths like `/@mini/.claude/projects/…`. A host that is offline is skipped and caught up later.
 - The rest of the diff is a few hooks in `UsageStore.swift`, kept small so the daily rebase stays clean.
 
+The Codex card can also use a banked reset, through `codex app-server` ([ADR 0014](docs/adr/0014-using-codex-banked-resets.md)).
+
 `Scripts/install-fork.sh` builds, signs with the local Apple Development identity and replaces `/Applications/Tinybar.app`.
 `fork-sync` (in `~/code/scripts`) rebases `main` onto `upstream/main` every day at noon, pushes, and reinstalls.
 Don't install the Homebrew cask alongside it: its updater would put the upstream app back.

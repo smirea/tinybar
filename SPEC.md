@@ -58,8 +58,8 @@ Honor `Retry-After`; on HTTP 429 with no header, back off 5 minutes.
 ### Codex
 1. **CLI OAuth**: read `~/.codex/auth.json` (respect `CODEX_HOME`).
    → `GET https://chatgpt.com/backend-api/wham/usage` for the 5h and weekly windows, Resets and credits.
-   → `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` for Banked Resets (status and expiry). Display only; never redeem.
-2. **CLI app-server fallback**: `codex -s read-only -a never app-server`, JSON-RPC `account/rateLimits/read`. The process is short-lived and terminated after the call.
+   → `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` for Banked Resets (status and expiry). Using one goes through the app-server below, never this endpoint (ADR 0014).
+2. **CLI app-server fallback**: `codex -s read-only -a never app-server`, JSON-RPC `account/rateLimits/read`. The process is short-lived and terminated after the call. The same process, with the Account's `CODEX_HOME`, runs `account/rateLimitResetCredit/consume` when the user confirms the Banked Resets line's reset button: once, or twice when a window the reset refills still has more than 20% left.
 3. **Browser cookie fallback** (opt-in): chatgpt.com session cookie → `/api/auth/session` access token → the `wham` endpoints. A session the browser has not refreshed (`error: RefreshAccessTokenError`) counts as expired.
 
 Displayed: 5h window, weekly window, model-specific windows if present, credits, Banked Resets.

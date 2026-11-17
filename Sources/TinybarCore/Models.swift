@@ -131,7 +131,7 @@ extension WindowKind {
     }
 }
 
-/// A saved Codex reset coupon (see CONTEXT.md: Banked Reset). Display only.
+/// A saved reset (see CONTEXT.md: Banked Reset). Only Codex's can be used from Tinybar (ADR 0014).
 public struct BankedReset: Codable, Sendable, Hashable, Identifiable {
     public var id: String
     public var title: String?
@@ -146,6 +146,15 @@ public struct BankedReset: Codable, Sendable, Hashable, Identifiable {
     }
 
     public var isAvailable: Bool { status == "available" }
+}
+
+/// What happened when Tinybar asked Codex to use a Banked Reset.
+public enum BankedResetOutcome: String, Decodable, Sendable {
+    case reset
+    /// No window was used enough to reset; no reset was spent.
+    case nothingToReset
+    case noCredit
+    case alreadyRedeemed
 }
 
 public struct Credits: Codable, Sendable, Hashable {

@@ -133,7 +133,7 @@ private final class RedirectFixture: URLProtocol, @unchecked Sendable {
     #expect(snapshot.windows.first?.durationSeconds == nil)
 }
 
-private func withCLI(_ body: String, test: (String, URL) throws -> Void) throws {
+private func withCLI(_ body: String, test: (String, URL) async throws -> Void) async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -141,18 +141,22 @@ private func withCLI(_ body: String, test: (String, URL) throws -> Void) throws 
     let pidFile = root.appendingPathComponent("pid")
     try "#!/bin/sh\ntrap '' TERM\necho $$ > '\(pidFile.path)'\n\(body)\n".write(to: script, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-    try test(script.path, pidFile)
+    try await test(script.path, pidFile)
+}
+
+private func readLimits(_ executable: String, timeout: TimeInterval) throws -> Data {
+    try CodexAppServer.runRPC(executable: executable, method: "account/rateLimits/read", params: [:], home: nil, timeout: timeout)
 }
 
 @Suite(.serialized)
 struct ProviderProcessTests {
-    @Test func providerProcessesCannotIgnoreTheirDeadline() throws {
+    @Test func providerProcessesCannotIgnoreTheirDeadline() async throws {
         // A finite sleep bounds the test itself even if the production watchdog regresses.
         for codex in [true, false] {
-            try withCLI("/bin/sleep 4") { executable, pidFile in
+            try await withCLI("/bin/sleep 4") { executable, pidFile in
                 let start = Date()
                 #expect(throws: ProviderError.self) {
-                    if codex { _ = try CodexAppServer.runRPC(executable: executable, timeout: 1) }
+                    if codex { _ = try readLimits(executable, timeout: 1) }
                     else { _ = try AntigravityCLI.runUsage(executable: executable, timeout: 1) }
                 }
                 #expect(Date().timeIntervalSince(start) < 3)
@@ -162,8 +166,8 @@ struct ProviderProcessTests {
         }
     }
 
-    @Test func codexReapsChildAfterSuccessfulRPC() throws {
-        try withCLI("""
+    @Test func codexReapsChildAfterSuccessfulRPC() async throws {
+        try await withCLI("""
         read initialize
         printf '%s\\n' '{"id":1,"result":{}}'
         read initialized
@@ -171,29 +175,29 @@ struct ProviderProcessTests {
         printf '%s\\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25}}}}'
         /bin/sleep 2
         """) { executable, pidFile in
-            let response = try CodexAppServer.runRPC(executable: executable, timeout: 5)
+            let response = try JSONDecoder().decode(CodexAppServer.Response.self, from: readLimits(executable, timeout: 5))
             #expect(response.rateLimits.primary?.usedPercent == 25)
             let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
             #expect(kill(pid, 0) == -1)
         }
     }
 
-    @Test func codexClosedInputDoesNotSignalTheApp() throws {
-        try withCLI("""
+    @Test func codexClosedInputDoesNotSignalTheApp() async throws {
+        try await withCLI("""
         read initialize
         exec 0<&-
         printf '%s\\n' '{"id":1,"result":{}}'
         /bin/sleep 2
         """) { executable, _ in
             #expect(throws: ProviderError.unexpected("codex app-server closed its input")) {
-                try CodexAppServer.runRPC(executable: executable, timeout: 5)
+                try readLimits(executable, timeout: 5)
             }
         }
     }
 
-    @Test func codexRejectsNonObjectRPCResults() throws {
+    @Test func codexRejectsNonObjectRPCResults() async throws {
         for result in ["null", "42", "[]"] {
-            try withCLI("""
+            try await withCLI("""
             read initialize
             printf '%s\\n' '{"id":1,"result":{}}'
             read initialized
@@ -201,22 +205,45 @@ struct ProviderProcessTests {
             printf '%s\\n' '{"id":2,"result":\(result)}'
             """) { executable, _ in
                 #expect(throws: ProviderError.unexpected("codex app-server: no result")) {
-                    try CodexAppServer.runRPC(executable: executable, timeout: 5)
+                    try readLimits(executable, timeout: 5)
                 }
             }
         }
     }
 
-    @Test func codexBoundsOutputAndRedactsRPCFailures() throws {
-        try withCLI("/usr/bin/head -c 1100000 /dev/zero") { executable, _ in
+    @Test func codexBoundsOutputAndRedactsRPCFailures() async throws {
+        try await withCLI("/usr/bin/head -c 1100000 /dev/zero") { executable, _ in
             #expect(throws: ProviderError.unexpected("codex app-server response is too large")) {
-                try CodexAppServer.runRPC(executable: executable, timeout: 5)
+                try readLimits(executable, timeout: 5)
             }
         }
-        try withCLI("read initialize; printf '%s\\n' '{\"id\":1,\"error\":{\"message\":\"Bearer synthetic-secret\"}}'") { executable, _ in
+        try await withCLI("read initialize; printf '%s\\n' '{\"id\":1,\"error\":{\"message\":\"Bearer synthetic-secret\"}}'") { executable, _ in
             #expect(throws: ProviderError.unexpected("codex app-server request failed")) {
-                try CodexAppServer.runRPC(executable: executable, timeout: 5)
+                try readLimits(executable, timeout: 5)
             }
+        }
+    }
+
+    @Test func codexUsesABankedResetThroughTheLoginsOwnFolder() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("codex-home-\(UUID().uuidString)")
+        let seen = FileManager.default.temporaryDirectory.appendingPathComponent("codex-seen-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: seen) }
+        try await withCLI("""
+        read initialize
+        printf '%s\\n' '{"id":1,"result":{}}'
+        read initialized
+        read consume
+        printf '%s\\n%s\\n' "$CODEX_HOME" "$consume" > '\(seen.path)'
+        printf '%s\\n' '{"id":2,"result":{"outcome":"nothingToReset"}}'
+        """) { executable, _ in
+            let attempt = UUID()
+            let outcome = try await CodexAppServer.useBankedReset(home: home, attempt: attempt, executable: executable, timeout: 5)
+            #expect(outcome == .nothingToReset)
+            let lines = try String(contentsOf: seen, encoding: .utf8).split(separator: "\n").map(String.init)
+            #expect(lines.first == home.path)
+            let request = try #require(try JSONSerialization.jsonObject(with: Data(lines[1].utf8)) as? [String: Any])
+            #expect(request["method"] as? String == "account/rateLimitResetCredit/consume")
+            #expect((request["params"] as? [String: String]) == ["idempotencyKey": attempt.uuidString])
         }
     }
 }

@@ -705,6 +705,27 @@ final class AppModel {
         return p.0 == provider && p.1.id == window.id && sameOwner
     }
 
+    // MARK: Banked Resets
+
+    /// Uses one of an Account's Banked Resets through its own Codex CLI login (ADR 0014), then
+    /// reads the limits again. Nil where no CLI login of Tinybar's own holds that Account.
+    func bankedResetAction(for account: Account?) -> (() async throws -> BankedResetOutcome)? {
+        guard let account, let login = codexLogin(of: account) else { return nil }
+        return { [weak self] in
+            let outcome = try await login.useBankedReset()
+            await self?.refresh(force: true)
+            return outcome
+        }
+    }
+
+    private func codexLogin(of account: Account) -> CodexProvider? {
+        // A browser session may be someone else's than the CLI's login.
+        if let main = defaultLogins[.codex], main.id == account.id {
+            return main.snapshot?.source == .browser ? nil : sources[.codex] as? CodexProvider
+        }
+        return folderAccounts.first { $0.key.provider == .codex && $0.value.id == account.id }?.key.source as? CodexProvider
+    }
+
     // MARK: Settings changes
 
     func setLoginFolder(_ folder: LoginFolder, enabled: Bool) {

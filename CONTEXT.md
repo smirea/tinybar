@@ -39,7 +39,7 @@ How much less of a Limit Window is used than an even pace would have used by now
 _Avoid_: Headroom, buffer, spare
 
 **Banked Reset**:
-A saved reset the user holds (a Codex reset coupon, a Claude "Reset for free" grant), which can be redeemed to reset a Limit Window early. Tinybar only displays it and never redeems it.
+A saved reset the user holds (a Codex reset coupon, a Claude "Reset for free" grant), which can be redeemed to reset a Limit Window early. Tinybar displays it, and uses a Codex one only when the user confirms it in the popover (ADR 0014).
 _Avoid_: Reset credit, rollover
 
 **Pinned Limit**:
