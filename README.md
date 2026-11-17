@@ -88,7 +88,8 @@ and add `--zap` to also delete your history and settings.
 ## Read-only by design
 
 Tinybar uses the logins your official CLIs already store and calls the same endpoints they call for
-`/usage`. It never refreshes a token, sends a prompt or redeems a banked reset. When a login
+`/usage`. It never refreshes a token or sends a prompt. The one exception: using a Codex banked reset when
+you confirm it in the popover, which goes through the Codex CLI ([ADR 0014](docs/adr/0014-using-codex-banked-resets.md)). When a login
 expires, the card turns stale until you run `claude`, `codex` or `agy` once, open Cursor, or run
 `opencode auth login`, `copilot login`, `gh auth login` or `grok`.
 [ADR 0001](docs/adr/0001-read-only-credentials.md) explains why.

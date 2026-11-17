@@ -1,7 +1,8 @@
 import Foundation
 
-/// Fallback source: asks a short-lived `codex app-server` (sandboxed read-only, no approvals) for
-/// rate limits over JSON-RPC, then terminates it. Lets the CLI use and refresh its own login.
+/// A short-lived `codex app-server` (sandboxed read-only, no approvals), asked one JSON-RPC
+/// question and then terminated. Lets the CLI use and refresh its own login: the fallback source
+/// for limits, and the only way Tinybar uses a Banked Reset (ADR 0014).
 enum CodexAppServer {
     struct Response: Decodable {
         var rateLimits: Snapshot
@@ -42,11 +43,35 @@ enum CodexAppServer {
     }
 
     static func fetch(timeout: TimeInterval = 15) async throws -> ProviderSnapshot {
-        guard let executable = locateCodex() else { throw ProviderError.notConfigured }
-        let result = try await Task.detached(priority: .utility) {
-            try runRPC(executable: executable, timeout: timeout)
+        try await snapshot(from: call("account/rateLimits/read", params: [:], home: nil, executable: locateCodex(), timeout: timeout))
+    }
+
+    private struct ConsumeResponse: Decodable {
+        var outcome: BankedResetOutcome
+    }
+
+    /// `attempt` identifies one press of the button, so a retried request can't use a second reset.
+    static func useBankedReset(
+        home: URL?, attempt: UUID, executable: String? = locateCodex(), timeout: TimeInterval = 30) async throws -> BankedResetOutcome
+    {
+        let response: ConsumeResponse = try await call(
+            "account/rateLimitResetCredit/consume", params: ["idempotencyKey": attempt.uuidString],
+            home: home, executable: executable, timeout: timeout)
+        return response.outcome
+    }
+
+    private static func call<T: Decodable>(
+        _ method: String, params: [String: String], home: URL?, executable: String?, timeout: TimeInterval) async throws -> T
+    {
+        guard let executable else { throw ProviderError.notConfigured }
+        let data = try await Task.detached(priority: .userInitiated) {
+            try runRPC(executable: executable, method: method, params: params, home: home, timeout: timeout)
         }.value
-        return snapshot(from: result)
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw ProviderError.unexpected("Unexpected codex app-server response")
+        }
     }
 
     static func snapshot(from r: Response, now: Date = Date()) -> ProviderSnapshot {
@@ -98,25 +123,35 @@ enum CodexAppServer {
 
     // MARK: Process
 
+    /// Where package managers put CLIs; a GUI app's PATH has none of these.
+    private static let binDirectories = [
+        "/opt/homebrew/bin", "/usr/local/bin",
+        Paths.home.appendingPathComponent(".local/bin").path,
+        Paths.home.appendingPathComponent(".bun/bin").path,
+        Paths.home.appendingPathComponent(".volta/bin").path,
+        Paths.home.appendingPathComponent("bin").path,
+    ]
+
     static func locateCodex() -> String? {
         let fm = FileManager.default
-        let candidates = [
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex",
-            Paths.home.appendingPathComponent(".local/bin/codex").path,
+        let candidates = binDirectories.map { "\($0)/codex" } + [
             "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
             "/Applications/Codex.app/Contents/Resources/codex",
         ]
         return candidates.first { fm.isExecutableFile(atPath: $0) }
     }
 
-    static func runRPC(executable: String, timeout: TimeInterval) throws -> Response {
+    /// The `result` of one request, as JSON.
+    static func runRPC(
+        executable: String, method: String, params: [String: String], home: URL?, timeout: TimeInterval) throws -> Data
+    {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = ["-s", "read-only", "-a", "never", "app-server"]
         var env = ProcessInfo.processInfo.environment
-        // GUI apps get a minimal PATH; the npm-installed CLI is a node script.
-        env["PATH"] = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", env["PATH"] ?? ""].joined(separator: ":")
+        // GUI apps get a minimal PATH; the npm- or bun-installed CLI is a node script.
+        env["PATH"] = (binDirectories + ["/usr/bin", "/bin", env["PATH"] ?? ""]).joined(separator: ":")
+        if let home { env["CODEX_HOME"] = home.path }
         process.environment = env
         let stdin = Pipe(), stdout = Pipe()
         process.standardInput = stdin
@@ -166,15 +201,10 @@ enum CodexAppServer {
         try send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "tinybar", "version": "0.1.0"]]])
         _ = try response(id: 1)
         try send(["method": "initialized", "params": [String: Any]()])
-        try send(["id": 2, "method": "account/rateLimits/read", "params": [String: Any]()])
+        try send(["id": 2, "method": method, "params": params])
         let message = try response(id: 2)
         guard let result = message["result"] as? [String: Any] else { throw ProviderError.unexpected("codex app-server: no result") }
-        let data = try JSONSerialization.data(withJSONObject: result)
-        do {
-            return try JSONDecoder().decode(Response.self, from: data)
-        } catch {
-            throw ProviderError.unexpected("Unexpected codex app-server response")
-        }
+        return try JSONSerialization.data(withJSONObject: result)
     }
 }
 

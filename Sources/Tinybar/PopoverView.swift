@@ -526,7 +526,9 @@ private struct ProviderPage: View {
             }
 
             if let snapshot, snapshot.hasExtras {
-                Extras(snapshot: snapshot)
+                Extras(
+                    snapshot: snapshot,
+                    useReset: state?.hasSeveralAccounts == true ? nil : model.bankedResetAction(for: state?.accounts.first))
             }
 
             if id == .claude, model.offersClaudeSwap {
@@ -589,7 +591,7 @@ private struct AccountList: View {
                     ) { model.pin(id, window, account: account) }
                 }
                 if snapshot.hasExtras {
-                    Extras(snapshot: snapshot, onPlatter: false)
+                    Extras(snapshot: snapshot, onPlatter: false, useReset: model.bankedResetAction(for: account))
                 }
             }
         }
@@ -958,6 +960,7 @@ private struct Extras: View {
     let snapshot: ProviderSnapshot
     /// Inside an Account's row there's a platter already.
     var onPlatter = true
+    var useReset: (() async throws -> BankedResetOutcome)?
 
     var body: some View {
         let lines = VStack(spacing: 0) {
@@ -972,6 +975,12 @@ private struct Extras: View {
                     "\(banked.count) banked reset\(banked.count == 1 ? "" : "s")",
                     icon: "arrow.counterclockwise",
                     value: next.map { "next expires in \(Format.countdown(to: $0))" } ?? "")
+                if let useReset {
+                    BankedResetControl(
+                        provider: snapshot.provider,
+                        left: snapshot.windows.filter { !$0.isModelSpecific }.map(\.remainingPercent).min(),
+                        use: useReset)
+                }
             }
             if let used = snapshot.creditsUsed {
                 line("AI credits used", icon: "circle.hexagongrid", value: used.formatted(.number.precision(.fractionLength(0...2))))
@@ -997,6 +1006,93 @@ private struct Extras: View {
         .font(.system(size: 12))
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
+    }
+}
+
+/// Using a Banked Reset, confirmed in place. A reset while a window still has more than a fifth
+/// left throws that much away, so it is confirmed twice.
+private struct BankedResetControl: View {
+    let provider: ProviderID
+    /// The least any window a reset refills has left.
+    let left: Double?
+    let use: () async throws -> BankedResetOutcome
+    @State private var step = Step.idle
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    enum Step: Equatable {
+        case idle, confirm, confirmAgain, working
+        case finished(String, failed: Bool)
+    }
+
+    static let wasteThreshold = 20.0
+
+    var body: some View {
+        HStack(spacing: 12) {
+            switch step {
+            case .idle:
+                action("Reset limits now", color: provider.color) { advance(.confirm) }
+                    .help("Uses one banked reset to refill your Codex limits")
+                Spacer()
+            case .confirm:
+                Text("Use a banked reset now?").foregroundStyle(.secondary)
+                Spacer()
+                action("Cancel", color: .secondary) { advance(.idle) }
+                action("Reset", color: provider.color) {
+                    if let left, left > Self.wasteThreshold { advance(.confirmAgain) } else { run() }
+                }
+            case .confirmAgain:
+                Text("\(Int(left?.rounded() ?? 0))% is still left. Reset anyway?")
+                    .foregroundStyle(.orange)
+                Spacer()
+                action("Cancel", color: .secondary) { advance(.idle) }
+                action("Reset anyway", color: .orange) { run() }
+            case .working:
+                ProgressView().controlSize(.mini).scaleEffect(0.8).frame(width: 12, height: 12)
+                Text("Resetting…").foregroundStyle(.secondary)
+                Spacer()
+            case let .finished(message, failed):
+                Text(message).foregroundStyle(failed ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                Spacer()
+                action("OK", color: .secondary) { advance(.idle) }
+            }
+        }
+        .font(.system(size: 12))
+        .lineLimit(1)
+        .padding(.leading, 40)
+        .padding(.trailing, 14)
+        .padding(.bottom, 7)
+        .frame(minHeight: 18)
+    }
+
+    private func action(_ title: String, color: Color, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Text(title).fontWeight(.medium).foregroundStyle(color).contentShape(Rectangle())
+        }
+        .buttonStyle(PressScale())
+    }
+
+    private func advance(_ next: Step) {
+        withAnimation(reduceMotion ? Motion.reduced : Motion.page) { step = next }
+    }
+
+    private func run() {
+        advance(.working)
+        Task {
+            do {
+                advance(Self.finished(try await use()))
+            } catch {
+                advance(.finished((error as? LocalizedError)?.errorDescription ?? "Couldn't reset", failed: true))
+            }
+        }
+    }
+
+    private static func finished(_ outcome: BankedResetOutcome) -> Step {
+        switch outcome {
+        case .reset: .finished("Limits reset", failed: false)
+        case .nothingToReset: .finished("Nothing to reset yet. No reset used.", failed: true)
+        case .noCredit: .finished("No banked resets left", failed: true)
+        case .alreadyRedeemed: .finished("Already reset", failed: false)
+        }
     }
 }
 

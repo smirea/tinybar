@@ -55,6 +55,11 @@ public struct CodexProvider: UsageProvider {
         throw lastError
     }
 
+    /// Asks the Codex CLI to use one of this login's Banked Resets (ADR 0014).
+    public func useBankedReset(attempt: UUID = UUID()) async throws -> BankedResetOutcome {
+        try await CodexAppServer.useBankedReset(home: home, attempt: attempt)
+    }
+
     private func fetch(with creds: CodexCredentials, source: DataSource) async throws -> ProviderSnapshot {
         async let usage = CodexUsageAPI.fetchUsage(creds, session: session)
         async let banked = try? CodexUsageAPI.fetchBankedResets(creds, session: session)
