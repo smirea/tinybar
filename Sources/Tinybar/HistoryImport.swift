@@ -10,11 +10,12 @@ enum HistoryImport {
         case importOpenCode = "--import-opencode"
         case importLogFolders = "--import-log-folders"
         case repairWorktreeProjects = "--repair-worktree-projects"
+        case assignMachines = "--assign-machines"
     }
 
     /// Child side: ingest everything, printing "done/total" lines. Called before the app starts.
     static func runChildIfRequested() {
-        guard let job = [Job.importHistory, .backfillStats, .backfillLongContext, .importOpenCode, .importLogFolders, .repairWorktreeProjects].first(where: { CommandLine.arguments.contains($0.rawValue) })
+        guard let job = [Job.importHistory, .backfillStats, .backfillLongContext, .importOpenCode, .importLogFolders, .repairWorktreeProjects, .assignMachines].first(where: { CommandLine.arguments.contains($0.rawValue) })
         else { return }
         Task.detached(priority: .utility) {
             do {
@@ -49,6 +50,8 @@ enum HistoryImport {
                     try await store.markLogRootsRead(roots)
                 case .repairWorktreeProjects:
                     try await store.repairWorktreeProjects(progress: report)
+                case .assignMachines:
+                    try await store.assignMachines(progress: report)
                 }
                 exit(0)
             } catch {

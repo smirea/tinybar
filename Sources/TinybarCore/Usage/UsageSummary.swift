@@ -56,6 +56,7 @@ public struct UsageSummary: Sendable {
     public var hasUnpriced: Bool
     public var models: [Line]
     public var projects: [Line]
+    public var machines: [Line]
     public var days: [DayBar]
 
     public static func build(
@@ -72,6 +73,7 @@ public struct UsageSummary: Sendable {
         var unpriced = false
         var models: [String: Acc] = [:]
         var projects: [String: Acc] = [:]
+        var machines: [String: Acc] = [:]
         let aliases = Self.projectAliases(rows.map(\.project))
         var bars: [String: Int64] = [:]
 
@@ -84,6 +86,7 @@ public struct UsageSummary: Sendable {
             models[r.model, default: Acc()].add(r.provider, t, c)
 
             projects[aliases[r.project] ?? r.project, default: Acc()].add(r.provider, t, c)
+            machines[r.machine, default: Acc()].add(r.provider, t, c)
 
             bars["\(r.day)|\(r.provider.rawValue)", default: 0] += t
         }
@@ -100,6 +103,7 @@ public struct UsageSummary: Sendable {
             hasUnpriced: unpriced,
             models: lines(models) { $0 },
             projects: lines(projects) { ProjectResolver.displayName($0) },
+            machines: lines(machines) { RemoteHosts.displayName($0) },
             days: bars.map { key, tokens in
                 let parts = key.split(separator: "|")
                 return DayBar(day: String(parts[0]), provider: ProviderID(rawValue: String(parts[1])) ?? .codex, tokens: tokens)

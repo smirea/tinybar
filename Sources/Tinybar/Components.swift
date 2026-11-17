@@ -422,9 +422,11 @@ extension ExtraUsageSpend {
     }
 }
 
-/// Developer snapshot switches (`--snapshot … --redact-projects` for public screenshots).
+/// Developer snapshot switches (`--snapshot … --redact-projects` for public screenshots, `--tall`).
 enum PopoverSnapshotOptions {
     static let redactProjects = CommandLine.arguments.contains("--redact-projects")
+    /// `--tall` lets a page grow past the popover's height, to see all of it at once.
+    static let tall = CommandLine.arguments.contains("--tall")
 
     static func projects(_ lines: [UsageSummary.Line]) -> [UsageSummary.Line] {
         guard redactProjects else { return lines }

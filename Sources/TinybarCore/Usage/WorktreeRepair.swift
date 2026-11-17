@@ -84,16 +84,16 @@ extension UsageStore {
 
     private func moveClaudeMessage(id: String, from old: String, to new: String) throws {
         guard let r = try db.run(
-            "SELECT day, provider, model, input, output, cache_write, cache_read FROM claude_message WHERE id = ? AND project = ?",
+            "SELECT day, provider, model, input, output, cache_write, cache_read, machine FROM claude_message WHERE id = ? AND project = ?",
             [.text(id), .text(old)]).first,
-            let day = r[0].text, let provider = r[1].text.flatMap(ProviderID.init(rawValue:)), let model = r[2].text
+            let day = r[0].text, let provider = r[1].text.flatMap(ProviderID.init(rawValue:)), let model = r[2].text, let machine = r[7].text
         else { return }
         let t = TokenCounts(input: r[3].int, output: r[4].int, cacheWrite: r[5].int, cacheRead: r[6].int)
-        try addDaily(day: day, provider: provider, model: model, project: old, -t)
-        try addDaily(day: day, provider: provider, model: model, project: new, t)
+        try addDaily(day: day, provider: provider, model: model, project: old, machine: machine, -t)
+        try addDaily(day: day, provider: provider, model: model, project: new, machine: machine, t)
         if let band = ContextBand.of(t) {
-            try addLong(day: day, provider: provider, model: model, project: old, band: band, -t)
-            try addLong(day: day, provider: provider, model: model, project: new, band: band, t)
+            try addLong(day: day, provider: provider, model: model, project: old, machine: machine, band: band, -t)
+            try addLong(day: day, provider: provider, model: model, project: new, machine: machine, band: band, t)
         }
         try db.run("UPDATE claude_message SET project = ? WHERE id = ?", [.text(new), .text(id)])
     }
@@ -103,14 +103,14 @@ extension UsageStore {
         let params: [SQLiteDB.Value] = [.text(new), .text(day), .text(model), .text(old)]
         let filter = "WHERE day = ? AND model = ? AND project = ?"
         try db.run("""
-        INSERT INTO daily_usage (day, provider, model, project, input, output, cache_write, cache_read)
-        SELECT day, provider, model, ?, input, output, cache_write, cache_read FROM daily_usage \(filter)
-        ON CONFLICT(day, provider, model, project) DO UPDATE SET \(tokens)
+        INSERT INTO daily_usage (day, provider, model, project, machine, input, output, cache_write, cache_read)
+        SELECT day, provider, model, ?, machine, input, output, cache_write, cache_read FROM daily_usage \(filter)
+        ON CONFLICT(day, provider, model, project, machine) DO UPDATE SET \(tokens)
         """, params)
         try db.run("""
-        INSERT INTO daily_long_context (day, provider, model, project, band, input, output, cache_write, cache_read)
-        SELECT day, provider, model, ?, band, input, output, cache_write, cache_read FROM daily_long_context \(filter)
-        ON CONFLICT(day, provider, model, project, band) DO UPDATE SET \(tokens)
+        INSERT INTO daily_long_context (day, provider, model, project, machine, band, input, output, cache_write, cache_read)
+        SELECT day, provider, model, ?, machine, band, input, output, cache_write, cache_read FROM daily_long_context \(filter)
+        ON CONFLICT(day, provider, model, project, machine, band) DO UPDATE SET \(tokens)
         """, params)
         try db.run("DELETE FROM daily_usage \(filter)", Array(params.dropFirst()))
         try db.run("DELETE FROM daily_long_context \(filter)", Array(params.dropFirst()))

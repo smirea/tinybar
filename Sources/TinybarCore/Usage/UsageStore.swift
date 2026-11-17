@@ -6,6 +6,8 @@ public struct DailyUsage: Sendable, Hashable {
     public var provider: ProviderID
     public var model: String
     public var project: String
+    /// A `RemoteHosts` host, or `RemoteHosts.thisMac`.
+    public var machine: String = RemoteHosts.thisMac
     public var tokens: TokenCounts
     /// The part of `tokens` from long requests, by Context Band, for Long-context Prices.
     public var long: [Int64: TokenCounts] = [:]
@@ -37,7 +39,7 @@ public struct DailyStat: Sendable, Hashable {
 public actor UsageStore {
     let db: SQLiteDB
     let projects = ProjectResolver()
-    private static let schemaVersion: Int64 = 9
+    private static let schemaVersion: Int64 = 10
 
     public init(path: URL = Paths.appSupport.appendingPathComponent("usage.sqlite")) throws {
         let db = try SQLiteDB(path: path.path)
@@ -52,6 +54,33 @@ public actor UsageStore {
     private static func migrate(_ db: SQLiteDB) throws {
         let version = try db.run("PRAGMA user_version").first?.first?.int ?? 0
         guard version < schemaVersion else { return }
+        if version < 9 { try migrateToNine(db, from: version) }
+        if try !db.run("PRAGMA table_info(claude_message)").contains(where: { $0[1].text == "machine" }) {
+            try db.exec("ALTER TABLE claude_message ADD COLUMN machine TEXT NOT NULL DEFAULT ''")
+        }
+        // 10 keeps which machine each row's logs are on (`RemoteHosts`). Rows so far say this Mac
+        // until `assignMachines` reads the other machines' logs again.
+        try db.exec("""
+        ALTER TABLE daily_usage RENAME TO daily_usage_old;
+        ALTER TABLE daily_long_context RENAME TO daily_long_context_old;
+        \(dailyUsageSchema)
+        \(longContextSchema)
+        INSERT INTO daily_usage (day, provider, model, project, input, output, cache_write, cache_read)
+        SELECT day, provider, model, project, input, output, cache_write, cache_read FROM daily_usage_old;
+        INSERT INTO daily_long_context (day, provider, model, project, band, input, output, cache_write, cache_read)
+        SELECT day, provider, model, project, band, input, output, cache_write, cache_read FROM daily_long_context_old;
+        DROP TABLE daily_usage_old;
+        DROP TABLE daily_long_context_old;
+        INSERT OR IGNORE INTO meta (key, value)
+        SELECT 'machines_limit:' || path, CAST(offset AS TEXT) FROM file_cursor WHERE path LIKE '\(RemoteLogs.prefix)%';
+        INSERT OR REPLACE INTO meta (key, value)
+        SELECT 'machines', 'done' WHERE NOT EXISTS (SELECT 1 FROM meta WHERE key GLOB 'machines_limit:*');
+        PRAGMA user_version = \(schemaVersion);
+        """)
+    }
+
+    private static func migrateToNine(_ db: SQLiteDB, from version: Int64) throws {
+        let schemaVersion = 9
         if version == 7 || version == 8 {
             // 0.9.0 keeps readings per Account. The ones so far can mix Accounts, so they stay
             // unclaimed (SPEC §14).
@@ -112,17 +141,7 @@ public actor UsageStore {
         try db.exec(claudeMessageSchema + statSchema + longContextSchema)
         try db.exec("""
         INSERT OR REPLACE INTO meta (key, value) VALUES ('long_context_backfill', 'done'), ('opencode_import', 'done');
-        CREATE TABLE IF NOT EXISTS daily_usage (
-            day TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            model TEXT NOT NULL,
-            project TEXT NOT NULL,
-            input INTEGER NOT NULL DEFAULT 0,
-            output INTEGER NOT NULL DEFAULT 0,
-            cache_write INTEGER NOT NULL DEFAULT 0,
-            cache_read INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (day, provider, model, project)
-        ) WITHOUT ROWID;
+        \(dailyUsageSchema)
         CREATE TABLE IF NOT EXISTS file_cursor (
             path TEXT PRIMARY KEY,
             provider TEXT NOT NULL,
@@ -136,6 +155,22 @@ public actor UsageStore {
         """)
     }
 
+    /// `machine` is a `RemoteHosts` host, or empty for this Mac.
+    private static let dailyUsageSchema = """
+    CREATE TABLE IF NOT EXISTS daily_usage (
+        day TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        project TEXT NOT NULL,
+        machine TEXT NOT NULL DEFAULT '',
+        input INTEGER NOT NULL DEFAULT 0,
+        output INTEGER NOT NULL DEFAULT 0,
+        cache_write INTEGER NOT NULL DEFAULT 0,
+        cache_read INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, provider, model, project, machine)
+    ) WITHOUT ROWID;
+    """
+
     /// The tokens of long requests (SPEC §10), a subset of `daily_usage` by Context Band.
     private static let longContextSchema = """
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID;
@@ -144,12 +179,13 @@ public actor UsageStore {
         provider TEXT NOT NULL,
         model TEXT NOT NULL,
         project TEXT NOT NULL,
+        machine TEXT NOT NULL DEFAULT '',
         band INTEGER NOT NULL,
         input INTEGER NOT NULL DEFAULT 0,
         output INTEGER NOT NULL DEFAULT 0,
         cache_write INTEGER NOT NULL DEFAULT 0,
         cache_read INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (day, provider, model, project, band)
+        PRIMARY KEY (day, provider, model, project, machine, band)
     ) WITHOUT ROWID;
     """
 
@@ -325,7 +361,7 @@ public actor UsageStore {
                     try addTokens(
                         day: DayKey.string(for: row.record.timestamp), provider: .opencode,
                         model: ModelName.normalize(row.record.model), project: projects.project(for: row.record.cwd),
-                        row.record.tokens)
+                        machine: RemoteHosts.thisMac, row.record.tokens)
                     added += 1
                 }
                 try db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('opencode_cursor', ?), ('opencode_source', ?)", [.text(String(newest)), .text(source)])
@@ -468,12 +504,13 @@ public actor UsageStore {
             added += 1
         }
 
+        let machine = RemoteLogs.machine(of: path)
         for (key, t) in agg {
-            try addDaily(day: key.day, provider: .codex, model: key.model, project: key.project, t)
+            try addDaily(day: key.day, provider: .codex, model: key.model, project: key.project, machine: machine, t)
         }
         for (key, tokens) in long {
-            let t = mode == .longContext ? try boundedBackfill(tokens, key: key) : tokens
-            if !t.isZero { try addLong(day: key.day, provider: .codex, model: key.model, project: key.project, band: key.band, t) }
+            let t = mode == .longContext ? try boundedBackfill(tokens, key: key, machine: machine) : tokens
+            if !t.isZero { try addLong(day: key.day, provider: .codex, model: key.model, project: key.project, machine: machine, band: key.band, t) }
         }
         try write(stats)
         let state = (try? JSONEncoder().encode(parser)).map { String(decoding: $0, as: UTF8.self) }
@@ -533,7 +570,7 @@ public actor UsageStore {
         var added = 0
         for id in order {
             guard let message = latest[id] else { continue }
-            if try upsertClaudeMessage(id: id, message, countTokens: mode == .incremental) { added += 1 }
+            if try upsertClaudeMessage(id: id, message, machine: RemoteLogs.machine(of: path), countTokens: mode == .incremental) { added += 1 }
         }
         var stats = StatBatch()
         for event in events {
@@ -557,10 +594,10 @@ public actor UsageStore {
     /// Records a message's usage and activity, replacing any earlier count for the same id.
     /// With `countTokens` false (backfill) the daily token totals are left alone.
     /// Returns true for a message seen for the first time.
-    private func upsertClaudeMessage(id: String, _ message: ClaudeMessage, countTokens: Bool = true) throws -> Bool {
+    private func upsertClaudeMessage(id: String, _ message: ClaudeMessage, machine: String, countTokens: Bool = true) throws -> Bool {
         let record = message.record
         let existing = try db.run(
-            "SELECT day, provider, model, project, input, output, cache_write, cache_read, stats FROM claude_message WHERE id = ?",
+            "SELECT day, provider, model, project, input, output, cache_write, cache_read, stats, machine FROM claude_message WHERE id = ?",
             [.text(id)]).first
 
         if let e = existing {
@@ -576,15 +613,16 @@ public actor UsageStore {
             let provider = e[1].text.flatMap(ProviderID.init(rawValue:)) ?? .claude
             let model = e[2].text ?? ""
             if tokensChanged && countTokens {
-                // Undo the old contribution, keeping its original day/model/project.
+                // Undo the old contribution, keeping its original day/model/project/machine.
                 let project = e[3].text ?? ""
-                try addDaily(day: day, provider: provider, model: model, project: project, -old)
-                try addDaily(day: day, provider: provider, model: model, project: project, final)
+                let machine = e[9].text ?? RemoteHosts.thisMac
+                try addDaily(day: day, provider: provider, model: model, project: project, machine: machine, -old)
+                try addDaily(day: day, provider: provider, model: model, project: project, machine: machine, final)
                 if let band = ContextBand.of(old) {
-                    try addLong(day: day, provider: provider, model: model, project: project, band: band, -old)
+                    try addLong(day: day, provider: provider, model: model, project: project, machine: machine, band: band, -old)
                 }
                 if let band = ContextBand.of(final) {
-                    try addLong(day: day, provider: provider, model: model, project: project, band: band, final)
+                    try addLong(day: day, provider: provider, model: model, project: project, machine: machine, band: band, final)
                 }
             }
             var stats = StatBatch()
@@ -616,7 +654,7 @@ public actor UsageStore {
         let provider = ClaudeLogParser.provider(forModel: model)
         let project = projects.project(for: record.cwd)
         if countTokens {
-            try addTokens(day: day, provider: provider, model: model, project: project, record.tokens)
+            try addTokens(day: day, provider: provider, model: model, project: project, machine: machine, record.tokens)
         }
         let newStats = MessageStats(message)
         var stats = StatBatch()
@@ -624,9 +662,9 @@ public actor UsageStore {
         stats.addMaximum(day: day, provider: provider, model: model, StatKey.contextMax, record.tokens.context)
         try write(stats)
         try db.run("""
-        INSERT INTO claude_message (id, day, provider, model, project, input, output, cache_write, cache_read, stats)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [.text(id), .text(day), .text(provider.rawValue), .text(model), .text(project),
+        INSERT INTO claude_message (id, day, provider, model, project, machine, input, output, cache_write, cache_read, stats)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [.text(id), .text(day), .text(provider.rawValue), .text(model), .text(project), .text(machine),
               .int(record.tokens.input), .int(record.tokens.output), .int(record.tokens.cacheWrite), .int(record.tokens.cacheRead),
               .text(newStats.encoded)])
         return true
@@ -813,31 +851,31 @@ public actor UsageStore {
     }
 
     /// A new response's tokens, in the daily totals and, if it was long, its Context Band.
-    private func addTokens(day: String, provider: ProviderID, model: String, project: String, _ t: TokenCounts) throws {
-        try addDaily(day: day, provider: provider, model: model, project: project, t)
+    private func addTokens(day: String, provider: ProviderID, model: String, project: String, machine: String, _ t: TokenCounts) throws {
+        try addDaily(day: day, provider: provider, model: model, project: project, machine: machine, t)
         if let band = ContextBand.of(t) {
-            try addLong(day: day, provider: provider, model: model, project: project, band: band, t)
+            try addLong(day: day, provider: provider, model: model, project: project, machine: machine, band: band, t)
         }
     }
 
-    func addDaily(day: String, provider: ProviderID, model: String, project: String, _ t: TokenCounts) throws {
+    func addDaily(day: String, provider: ProviderID, model: String, project: String, machine: String, _ t: TokenCounts) throws {
         try db.run("""
-        INSERT INTO daily_usage (day, provider, model, project, input, output, cache_write, cache_read)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(day, provider, model, project) DO UPDATE SET
+        INSERT INTO daily_usage (day, provider, model, project, machine, input, output, cache_write, cache_read)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(day, provider, model, project, machine) DO UPDATE SET
             input = input + excluded.input,
             output = output + excluded.output,
             cache_write = cache_write + excluded.cache_write,
             cache_read = cache_read + excluded.cache_read
-        """, [.text(day), .text(provider.rawValue), .text(model), .text(project),
+        """, [.text(day), .text(provider.rawValue), .text(model), .text(project), .text(machine),
               .int(t.input), .int(t.output), .int(t.cacheWrite), .int(t.cacheRead)])
     }
 
     /// Old cursors didn't keep their timezone or resolved Project. Don't create orphan bands
     /// when replay attribution changed, or let a backfill exceed the totals actually on file.
-    private func boundedBackfill(_ t: TokenCounts, key: AggKey) throws -> TokenCounts {
-        let params: [SQLiteDB.Value] = [.text(key.day), .text(key.model), .text(key.project)]
-        let filter = " WHERE day = ? AND provider = 'codex' AND model = ? AND project = ?"
+    private func boundedBackfill(_ t: TokenCounts, key: AggKey, machine: String) throws -> TokenCounts {
+        let params: [SQLiteDB.Value] = [.text(key.day), .text(key.model), .text(key.project), .text(machine)]
+        let filter = " WHERE day = ? AND provider = 'codex' AND model = ? AND project = ? AND machine = ?"
         guard let total = try db.run("SELECT input, output, cache_write, cache_read FROM daily_usage" + filter, params).first
         else { return TokenCounts() }
         let used = try db.run("SELECT sum(input), sum(output), sum(cache_write), sum(cache_read) FROM daily_long_context" + filter, params).first!
@@ -847,16 +885,16 @@ public actor UsageStore {
         return TokenCounts(input: values[0], output: values[1], cacheWrite: values[2], cacheRead: values[3])
     }
 
-    func addLong(day: String, provider: ProviderID, model: String, project: String, band: Int64, _ t: TokenCounts) throws {
+    func addLong(day: String, provider: ProviderID, model: String, project: String, machine: String, band: Int64, _ t: TokenCounts) throws {
         try db.run("""
-        INSERT INTO daily_long_context (day, provider, model, project, band, input, output, cache_write, cache_read)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(day, provider, model, project, band) DO UPDATE SET
+        INSERT INTO daily_long_context (day, provider, model, project, machine, band, input, output, cache_write, cache_read)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(day, provider, model, project, machine, band) DO UPDATE SET
             input = input + excluded.input,
             output = output + excluded.output,
             cache_write = cache_write + excluded.cache_write,
             cache_read = cache_read + excluded.cache_read
-        """, [.text(day), .text(provider.rawValue), .text(model), .text(project), .int(band),
+        """, [.text(day), .text(provider.rawValue), .text(model), .text(project), .text(machine), .int(band),
               .int(t.input), .int(t.output), .int(t.cacheWrite), .int(t.cacheRead)])
     }
 
@@ -872,29 +910,32 @@ public actor UsageStore {
 
     /// Daily rows with `day >= since` (inclusive), optionally for one provider.
     public func daily(since: String, provider: ProviderID? = nil) throws -> [DailyUsage] {
-        var sql = "SELECT day, provider, model, project, input, output, cache_write, cache_read FROM daily_usage WHERE day >= ?"
+        var sql = "SELECT day, provider, model, project, machine, input, output, cache_write, cache_read FROM daily_usage WHERE day >= ?"
         var params: [SQLiteDB.Value] = [.text(since)]
         if let provider {
             sql += " AND provider = ?"
             params.append(.text(provider.rawValue))
         }
-        struct Key: Hashable { var day, provider, model, project: String }
+        struct Key: Hashable { var day, provider, model, project, machine: String }
+        func key(_ r: [SQLiteDB.Value]) -> Key {
+            Key(day: r[0].text ?? "", provider: r[1].text ?? "", model: r[2].text ?? "", project: r[3].text ?? "", machine: r[4].text ?? "")
+        }
         var long: [Key: [Int64: TokenCounts]] = [:]
-        for r in try db.run(sql.replacingOccurrences(of: "project, input", with: "project, band, input")
+        for r in try db.run(sql.replacingOccurrences(of: "machine, input", with: "machine, band, input")
             .replacingOccurrences(of: "daily_usage", with: "daily_long_context"), params)
         {
-            let key = Key(day: r[0].text ?? "", provider: r[1].text ?? "", model: r[2].text ?? "", project: r[3].text ?? "")
-            long[key, default: [:]][r[4].int] = TokenCounts(input: r[5].int, output: r[6].int, cacheWrite: r[7].int, cacheRead: r[8].int)
+            long[key(r), default: [:]][r[5].int] = TokenCounts(input: r[6].int, output: r[7].int, cacheWrite: r[8].int, cacheRead: r[9].int)
         }
         return try db.run(sql, params).compactMap { r in
             guard let provider = r[1].text.flatMap(ProviderID.init(rawValue:)) else { return nil }
-            let key = Key(day: r[0].text ?? "", provider: r[1].text ?? "", model: r[2].text ?? "", project: r[3].text ?? "")
+            let key = key(r)
             return DailyUsage(
                 day: key.day,
                 provider: provider,
                 model: key.model,
                 project: key.project,
-                tokens: TokenCounts(input: r[4].int, output: r[5].int, cacheWrite: r[6].int, cacheRead: r[7].int),
+                machine: key.machine,
+                tokens: TokenCounts(input: r[5].int, output: r[6].int, cacheWrite: r[7].int, cacheRead: r[8].int),
                 long: long[key] ?? [:])
         }
     }
@@ -1082,7 +1123,7 @@ public actor UsageStore {
                                        }),
               let cursor = try loadCursor(path: oldPath) else { return nil }
         try db.run("UPDATE file_cursor SET path = ? WHERE path = ?", [.text(path), .text(oldPath)])
-        for prefix in ["stats_backfill_limit:", "stats_backfill_file:", "long_context_backfill_limit:", "long_context_backfill_file:"] {
+        for prefix in ["stats_backfill_limit:", "stats_backfill_file:", "long_context_backfill_limit:", "long_context_backfill_file:", "machines_limit:"] {
             try db.run("UPDATE meta SET key = ? WHERE key = ?", [.text(prefix + path), .text(prefix + oldPath)])
         }
         return cursor
