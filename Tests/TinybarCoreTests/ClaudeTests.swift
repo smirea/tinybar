@@ -159,6 +159,13 @@ private func tempRoot() throws -> (URL, URL) {
     #expect(throws: ProviderError.self) { try ClaudeCredentials.parse(Data(#"{"mcpOAuth":{}}"#.utf8)) }
 }
 
+@Test func anExpiredCredentialsFileDoesNotHideAFresherKeychainLogin() {
+    let stale = ClaudeCredentials(accessToken: "file", expiresAt: Date(timeIntervalSince1970: 1_000))
+    let fresh = ClaudeCredentials(accessToken: "keychain", expiresAt: Date(timeIntervalSince1970: 2_000))
+    #expect(ClaudeCredentials.freshest([stale, fresh])?.accessToken == "keychain")
+    #expect(ClaudeCredentials.freshest([fresh, stale])?.accessToken == "keychain")
+}
+
 // MARK: Cookies
 
 @Test func decryptsChromiumV10Cookie() throws {

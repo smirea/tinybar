@@ -3,8 +3,8 @@ import Foundation
 /// The OAuth login Claude Code stores. Read-only: Tinybar never refreshes or rewrites it (ADR 0001).
 ///
 /// Sources, in order:
-/// 1. `<config dir>/.credentials.json` (Linux-style installs, `CLAUDE_CONFIG_DIR`).
-/// 2. The login Keychain item `Claude Code-credentials`, read via `/usr/bin/security`.
+/// 1. `<config dir>/.credentials.json` (Linux-style installs, `CLAUDE_CONFIG_DIR`), while it's unexpired.
+/// 2. Otherwise, whichever of that file and the login Keychain item `Claude Code-credentials`, read via `/usr/bin/security`.
 ///    Claude Code itself writes the item with that tool, so it is already on the item's access
 ///    list and reading through it does not show a password prompt, unlike a direct
 ///    Security.framework read from Tinybar's own binary.
@@ -55,11 +55,18 @@ public struct ClaudeCredentials: Sendable {
     }
 
     public static func load(folder: URL? = nil) throws -> ClaudeCredentials {
-        for file in credentialFiles(folder: folder) {
-            if let data = try? Data(contentsOf: file) { return try parse(data) }
-        }
-        guard let data = try readKeychain(service: keychainService(folder: folder)) else { throw ProviderError.notConfigured }
-        return try parse(data)
+        let file = credentialFiles(folder: folder).lazy.compactMap { try? parse(Data(contentsOf: $0)) }.first
+        if let file, !file.isExpired { return file }
+        // Claude Code on macOS keeps its login in the Keychain, so a `.credentials.json` beside it can
+        // hold only MCP logins, or an expired copy from an older install.
+        let keychain = try readKeychain(service: keychainService(folder: folder)).flatMap { try? parse($0) }
+        guard let login = freshest([file, keychain].compactMap(\.self)) else { throw ProviderError.notConfigured }
+        return login
+    }
+
+    /// The login that stays valid longest; one with no expiry counts as never expiring.
+    static func freshest(_ logins: [ClaudeCredentials]) -> ClaudeCredentials? {
+        logins.max { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
     }
 
     static func credentialFiles(folder: URL? = nil) -> [URL] {

@@ -48,7 +48,7 @@ Known CodexBar pitfalls to avoid: full-corpus rescans (#2538), competing caches 
 For each Provider, the source order is inspired by CodexBar and everything is strictly read-only (ADR 0001).
 
 ### Claude
-1. **CLI OAuth**: read the token from `~/.claude/.credentials.json`, else Keychain item `Claude Code-credentials`.
+1. **CLI OAuth**: read the token from `~/.claude/.credentials.json` while it holds an unexpired one, else whichever of that file and the Keychain item `Claude Code-credentials` expires later (on macOS Claude Code keeps its login in the Keychain, so the file may hold only MCP logins or an expired copy).
    → `GET https://api.anthropic.com/api/oauth/usage?cedar_ember=1`, with the same headers the official CLI sends. `cedar_ember=1` adds the Banked Resets ("Reset for free" grants), as claude.ai asks for them. The plan name comes from the subscription type the CLI stores with its token. An account it isn't open to answers 400 or 403; then the plain request is sent once. Grant ids are redemption handles and are never read; only grants that are not paused, have resets left and are inside their start and end count, once per reset left.
 2. **Browser cookie fallback** (opt-in in Settings, ADR 0005): `sessionKey` from Chromium browsers or Firefox → `claude.ai/api/organizations/{id}/usage`. Safari is out (needs Full Disk Access).
 
