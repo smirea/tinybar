@@ -1,19 +1,22 @@
 import Foundation
 
 /// Grok limits, with the login `grok login` keeps. Only the CLI ever renews it: a refresh token can
-/// be used once, so doing that here could sign the user out (ADR 0001, ADR 0012).
+/// be used once, so doing that here could sign the user out (ADR 0001, ADR 0012). Its logins last
+/// six hours, so an expired one asks the CLI to renew itself (ADR 0015).
 public struct GrokProvider: UsageProvider {
     public let id = ProviderID.grok
     private let logins: GrokLogins
     private let session: URLSession
+    private let renew: @Sendable (GrokLogins) -> Void
 
     public init(session: URLSession = .tinybar) {
-        self.init(logins: GrokLogins(), session: session)
+        self.init(logins: GrokLogins(), session: session, renew: GrokLogins.renewThroughCLI)
     }
 
-    init(logins: GrokLogins, session: URLSession = .tinybar) {
+    init(logins: GrokLogins, session: URLSession = .tinybar, renew: @escaping @Sendable (GrokLogins) -> Void = { _ in }) {
         self.logins = logins
         self.session = session
+        self.renew = renew
     }
 
     public func isConfigured() -> Bool {
@@ -27,6 +30,17 @@ public struct GrokProvider: UsageProvider {
     }
 
     public func fetch() async throws -> ProviderSnapshot {
+        do {
+            return try await read()
+        } catch ProviderError.loginExpired {
+            let expired = logins.find()
+            renew(logins)
+            guard let renewed = logins.find(), renewed != expired else { throw ProviderError.loginExpired }
+            return try await read()
+        }
+    }
+
+    private func read() async throws -> ProviderSnapshot {
         guard let login = logins.find(), let base = logins.apiBase else { throw ProviderError.notConfigured }
         if let ends = login.expiresAt, ends <= Date() { throw ProviderError.loginExpired }
         guard HTTP.isHeaderSafe(login.token) else { throw ProviderError.loginExpired }
@@ -119,6 +133,16 @@ struct GrokLogins: Sendable {
 }
 
 extension GrokLogins {
+    /// `grok models` is the CLI's quickest command that signs in, and it renews an expired login
+    /// under the CLI's own lock. It leaves a valid one alone, so a login revoked early stays Stale.
+    static func renewThroughCLI(_ logins: GrokLogins) {
+        let installed = [logins.home, Paths.home.appendingPathComponent(".grok")].map { $0.appendingPathComponent("bin/grok").path }
+        guard let grok = installed.first(where: FileManager.default.isExecutableFile) ?? Paths.locateCLI("grok") else { return }
+        var env = logins.env
+        env["GROK_HOME"] = logins.home.path
+        _ = ChildProcess.output(of: grok, ["models"], environment: env, timeout: 30)
+    }
+
     init(env: [String: String] = ProcessInfo.processInfo.environment) {
         self.init(home: Paths.grokHome(env: env), env: env)
     }

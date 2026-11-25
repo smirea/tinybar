@@ -9,6 +9,7 @@ usage of other machines, read over SSH without copying their logs.
 - The rest of the diff is a few hooks in `UsageStore.swift`, kept small so the daily rebase stays clean.
 
 The Codex card can also use a banked reset, through `codex app-server` ([ADR 0014](docs/adr/0014-using-codex-banked-resets.md)).
+An expired Grok login is renewed by running `grok models` ([ADR 0015](docs/adr/0015-grok-renewed-through-its-cli.md)).
 
 `Scripts/install-fork.sh` builds, signs with the local Apple Development identity and replaces `/Applications/Tinybar.app`.
 `fork-sync` (in `~/code/scripts`) rebases `main` onto `upstream/main` every day at noon, pushes, and reinstalls.

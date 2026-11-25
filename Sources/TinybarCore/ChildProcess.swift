@@ -9,10 +9,11 @@ enum ChildProcess {
 
     /// What a short-lived program printed, trimmed, or nil if it failed, ran out of time or printed
     /// more than any answer would. A descendant left holding stdout can't outlast the timeout.
-    static func output(of executable: String, _ arguments: [String], timeout: TimeInterval) -> String? {
+    static func output(of executable: String, _ arguments: [String], environment: [String: String]? = nil, timeout: TimeInterval) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        if let environment { process.environment = environment }
         let stdout = Pipe()
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = stdout

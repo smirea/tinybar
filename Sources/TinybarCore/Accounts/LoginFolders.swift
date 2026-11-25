@@ -49,7 +49,9 @@ public struct LoginFolderKind: Sendable {
                 [isSet("GROK_HOME", env) ? Paths.grokHome(env: env) : home.appendingPathComponent(".grok", isDirectory: true)]
             },
             hasLogin: { GrokLogins(home: $0, env: ProcessInfo.processInfo.environment).find() != nil },
-            source: { folder, _ in GrokProvider(logins: GrokLogins(home: folder, env: ProcessInfo.processInfo.environment)) },
+            source: { folder, _ in
+                GrokProvider(logins: GrokLogins(home: folder, env: ProcessInfo.processInfo.environment), renew: GrokLogins.renewThroughCLI)
+            },
             renew: { folder, shell in "run `GROK_HOME=\(shell(folder)) grok login`" }),
         LoginFolderKind(
             provider: .copilot, cli: "Copilot CLI", variable: "COPILOT_HOME", files: ["config.json"], homePrefix: ".copilot",

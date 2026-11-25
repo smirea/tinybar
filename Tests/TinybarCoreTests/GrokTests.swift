@@ -326,14 +326,16 @@ private final class XAIServer: URLProtocol, @unchecked Sendable {
     }
 }
 
-private func fetch(_ token: String, _ extra: [String: Any] = [:]) async throws -> ProviderSnapshot {
+private func fetch(_ token: String, _ extra: [String: Any] = [:], renewTo renewed: [String: Any]? = nil) async throws -> ProviderSnapshot {
     let f = try Files()
     try f.auth([scope: entry(token, extra: extra)])
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [XAIServer.self]
     let session = URLSession(configuration: config)
     defer { session.invalidateAndCancel() }
-    return try await GrokProvider(logins: f.logins(), session: session).fetch()
+    let file = try renewed.map { String(decoding: try JSONSerialization.data(withJSONObject: [scope: $0]), as: UTF8.self) }
+    let renew: @Sendable (GrokLogins) -> Void = { _ in if let file { try? f.write(file) } }
+    return try await GrokProvider(logins: f.logins(), session: session, renew: renew).fetch()
 }
 
 /// The serialized suite keeps `XAIServer.seen()` to one test at a time.
@@ -375,12 +377,18 @@ struct GrokRequestTests {
     }
 
     /// Only the CLI renews it, so there's nothing to gain by asking.
-    @Test func sendsNothingWithAnExpiredLogin() async throws {
+    @Test func sendsNothingWithAnExpiredLoginTheCLIDidNotRenew() async throws {
         let before = XAIServer.seen().count
         await #expect(throws: ProviderError.loginExpired) { try await fetch("old", ["expires_at": "2020-01-01T00:00:00Z"]) }
         #expect(XAIServer.seen().count == before)
         #expect(try await fetch("fresh", ["expires_at": "2999-01-01T00:00:00Z"]).windows.count == 1)
         #expect(try await fetch("odd-date", ["expires_at": "soon"]).windows.count == 1, "the server decides what a bad date can't")
+    }
+
+    @Test func readsAgainWithTheLoginTheCLIRenewed() async throws {
+        let renewed = entry("good-token", extra: ["expires_at": "2999-01-01T00:00:00Z"])
+        #expect(try await fetch("old", ["expires_at": "2020-01-01T00:00:00Z"], renewTo: renewed).windows.count == 1)
+        #expect(try await fetch("bad", renewTo: renewed).windows.count == 1, "a login revoked before it ends")
     }
 
     @Test func aTokenThatCantBeAHeaderIsntSent() async throws {
