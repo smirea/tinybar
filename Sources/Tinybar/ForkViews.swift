@@ -159,7 +159,7 @@ private struct BarsWindowRow: View {
                     : reserve == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                 .lineLimit(1)
                 .fixedSize()
-                .frame(width: 56, alignment: .trailing)
+                .frame(width: 32, alignment: .trailing)
         }
         .monospacedDigit()
         .accessibilityElement(children: .ignore)
