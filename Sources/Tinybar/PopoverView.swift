@@ -282,10 +282,16 @@ private struct OverviewPage: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(model.enabledProviders, id: \.self) { id in
-                        Button { open(id) } label: { OverviewRow(model: model, id: id) }
-                            .buttonStyle(RowButtonStyle())
+                        Button { open(id) } label: {
+                            if model.settings.overviewStyle == .bars {
+                                OverviewBarsRow(model: model, id: id)
+                            } else {
+                                OverviewRow(model: model, id: id)
+                            }
+                        }
+                        .buttonStyle(RowButtonStyle())
                         if id != model.enabledProviders.last {
-                            Divider().padding(.leading, 64).padding(.trailing, 12).opacity(0.5)
+                            Divider().padding(.leading, model.settings.overviewStyle == .bars ? 12 : 64).padding(.trailing, 12).opacity(0.5)
                         }
                     }
                 }
@@ -1352,6 +1358,7 @@ private struct SettingsPage: View {
                     Text("Show percentage in menu bar")
                 }
                 SettingsToggle(isOn: $settings.showsUsedPercentage) { Text("Show percentages as used") }
+                OverviewStylePicker(style: $settings.overviewStyle)
                 SettingsToggle(isOn: Binding(
                     get: { model.isAuto },
                     set: { auto in

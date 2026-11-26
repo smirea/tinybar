@@ -25,6 +25,10 @@ final class Settings {
         didSet { defaults.set(showsUsedPercentage, forKey: "showsUsedPercentage") }
     }
 
+    var overviewStyle: OverviewStyle {
+        didSet { if savesChanges { defaults.set(overviewStyle.rawValue, forKey: "overviewStyle") } }
+    }
+
     var notificationsEnabled: Bool {
         didSet { defaults.set(notificationsEnabled, forKey: "notificationsEnabled") }
     }
@@ -64,6 +68,7 @@ final class Settings {
         pinnedLimit = defaults.string(forKey: "pinnedLimit")
         hidePercentage = defaults.bool(forKey: "hidePercentage")
         showsUsedPercentage = defaults.bool(forKey: "showsUsedPercentage")
+        overviewStyle = defaults.string(forKey: "overviewStyle").flatMap(OverviewStyle.init) ?? .bars
         notificationsEnabled = defaults.bool(forKey: "notificationsEnabled")
         readClaudeSwap = defaults.bool(forKey: "readClaudeSwap")
         claudeSwapHintDismissed = defaults.bool(forKey: "claudeSwapHintDismissed")
