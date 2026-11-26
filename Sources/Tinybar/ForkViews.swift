@@ -108,7 +108,7 @@ struct OverviewBarsRow: View {
             }
             if let snapshot, !snapshot.windows.isEmpty {
                 Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 5) {
-                    ForEach(snapshot.windows) { window in
+                    ForEach(snapshot.windows.filter { model.settings.showsBar(id, $0) }) { window in
                         BarsWindowRow(window: window, provider: id, asOf: asOf)
                     }
                 }
@@ -155,7 +155,7 @@ private struct BarsWindowRow: View {
                 .frame(width: 34, alignment: .trailing)
             Text(reserve.map(Self.delta) ?? "—")
                 .font(.system(size: 11))
-                .foregroundStyle(reserve.map { $0 < 0 } == true ? AnyShapeStyle(.red)
+                .foregroundStyle(reserve.map { $0 < 0 } == true ? AnyShapeStyle(Self.overPace)
                     : reserve == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                 .lineLimit(1)
                 .fixedSize()
@@ -167,13 +167,19 @@ private struct BarsWindowRow: View {
         .accessibilityValue(reserve.map { $0 < 0 ? "\(Self.span(-$0)) over an even pace" : "\(Self.span($0)) to spare" } ?? "")
     }
 
-    /// "+2d 9h" under an even pace, "−1d 3h" over it.
+    /// Brighter than the system red, which reads as dim at this size on the dark popover.
+    private static let overPace = Color(red: 1, green: 0.32, blue: 0.32)
+
+    /// "+2d" under an even pace, "−3h" over it: only the largest unit.
     static func delta(_ seconds: TimeInterval) -> String {
         "\(seconds < 0 ? "−" : "+")\(span(abs(seconds)))"
     }
 
     private static func span(_ seconds: TimeInterval) -> String {
-        seconds < 60 ? "0m" : Format.countdown(to: Date(timeIntervalSinceReferenceDate: seconds), now: Date(timeIntervalSinceReferenceDate: 0))
+        let s = Int(seconds)
+        if s >= 86400 { return "\(s / 86400)d" }
+        if s >= 3600 { return "\(s / 3600)h" }
+        return "\(s / 60)m"
     }
 }
 
@@ -213,6 +219,48 @@ struct OverviewStylePicker: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
+        }
+    }
+}
+
+extension Settings {
+    func showsBar(_ id: ProviderID, _ window: LimitWindow) -> Bool {
+        !hiddenBars.contains(Self.barKey(id, window))
+    }
+
+    func setBar(_ id: ProviderID, _ window: LimitWindow, shown: Bool) {
+        if shown { hiddenBars.remove(Self.barKey(id, window)) } else { hiddenBars.insert(Self.barKey(id, window)) }
+    }
+
+    private static func barKey(_ id: ProviderID, _ window: LimitWindow) -> String { "\(id.rawValue).\(window.id)" }
+}
+
+/// Settings' list of every Limit Window the overview can show as a bar, each toggled on or off.
+/// Only windows a subscription has reported are listed, so it fills in as they're read.
+struct OverviewBarsSection: View {
+    let model: AppModel
+
+    var body: some View {
+        let rows = model.enabledProviders.flatMap { id in
+            (model.providers[id]?.snapshot?.windows ?? []).map { (id: id, window: $0) }
+        }
+        if !rows.isEmpty {
+            SettingsSection("Overview bars", footer: "Turn off the limits you don't need to see at a glance. Their provider pages still show them.") {
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    SettingsToggle(
+                        isOn: Binding(
+                            get: { model.settings.showsBar(row.id, row.window) },
+                            set: { model.settings.setBar(row.id, row.window, shown: $0) }),
+                        first: index == 0)
+                    {
+                        HStack(spacing: 8) {
+                            ProviderDot(id: row.id, size: 7)
+                            Text(row.id.displayName).foregroundStyle(.secondary)
+                            Text(row.window.title)
+                        }
+                    }
+                }
+            }
         }
     }
 }

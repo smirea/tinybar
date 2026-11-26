@@ -29,6 +29,11 @@ final class Settings {
         didSet { if savesChanges { defaults.set(overviewStyle.rawValue, forKey: "overviewStyle") } }
     }
 
+    /// Overview bars the user turned off, as "provider.window".
+    var hiddenBars: Set<String> {
+        didSet { if savesChanges { defaults.set(Array(hiddenBars).sorted(), forKey: "hiddenBars") } }
+    }
+
     var notificationsEnabled: Bool {
         didSet { defaults.set(notificationsEnabled, forKey: "notificationsEnabled") }
     }
@@ -68,6 +73,7 @@ final class Settings {
         pinnedLimit = defaults.string(forKey: "pinnedLimit")
         hidePercentage = defaults.bool(forKey: "hidePercentage")
         showsUsedPercentage = defaults.bool(forKey: "showsUsedPercentage")
+        hiddenBars = Set(defaults.stringArray(forKey: "hiddenBars") ?? [])
         overviewStyle = defaults.string(forKey: "overviewStyle").flatMap(OverviewStyle.init) ?? .bars
         notificationsEnabled = defaults.bool(forKey: "notificationsEnabled")
         readClaudeSwap = defaults.bool(forKey: "readClaudeSwap")

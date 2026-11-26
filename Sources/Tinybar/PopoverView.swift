@@ -1349,6 +1349,9 @@ private struct SettingsPage: View {
                 }
             }
             OtherLoginsSection(model: model)
+            if settings.overviewStyle == .bars {
+                OverviewBarsSection(model: model)
+            }
             SettingsSection("General") {
                 SettingsToggle(isOn: $settings.launchAtLogin, first: true) { Text("Launch at login") }
                 SettingsToggle(isOn: $settings.notificationsEnabled) { Text("Notify when a limit is nearly used up") }
@@ -1703,7 +1706,7 @@ private enum LoginFolderPicker {
 /// A titled platter of rows, like the limit cards. Drawn by hand
 /// rather than with a grouped `Form`, whose section backgrounds mis-measure in the fixed-size
 /// popover and leave the last row outside its card.
-private struct SettingsSection<Content: View>: View {
+struct SettingsSection<Content: View>: View {
     let title: String?
     var footer: String?
     @ViewBuilder let content: Content
@@ -1735,7 +1738,7 @@ private struct SettingsSection<Content: View>: View {
 }
 
 /// A row with a hairline above it, except the first in its section.
-private struct SettingsToggle<Label: View>: View {
+struct SettingsToggle<Label: View>: View {
     @Binding var isOn: Bool
     var first = false
     @ViewBuilder let label: Label
