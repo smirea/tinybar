@@ -361,7 +361,8 @@ extension ProviderID {
         switch self {
         case .claude: Color(red: 0.85, green: 0.47, blue: 0.34)
         case .codex: .primary
-        case .gemini: Gemini.blue
+        // Its spark's green: its blue is Grok's on a chart.
+        case .gemini: Gemini.green
         case .cursor: .gray
         // Its mark is monochrome like Codex's and Cursor's, which charts couldn't tell apart.
         case .opencode: Color(red: 0.13, green: 0.65, blue: 0.62)

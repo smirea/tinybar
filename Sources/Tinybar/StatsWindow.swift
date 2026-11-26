@@ -205,8 +205,13 @@ struct StatsPalette {
         faint = ink.opacity(0.07)
     }
 
+    /// Claude and Codex keep the card's two tones; the others counted since ADR 0017 take their own.
     func color(_ provider: ProviderID) -> Color {
-        provider == .claude ? claude : ink
+        switch provider {
+        case .claude: claude
+        case .codex: ink
+        default: provider.color
+        }
     }
 }
 
@@ -636,8 +641,8 @@ struct TokensHero: View {
                 }
             }
             HStack(spacing: 14) {
-                ForEach([ProviderID.claude, .codex], id: \.self) { id in
-                    if let t = summary.tokensByProvider[id], t > 0 {
+                ForEach(summary.tokensByProvider.filter { $0.value > 0 }.sorted { $0.value > $1.value }.map(\.key), id: \.self) { id in
+                    if let t = summary.tokensByProvider[id] {
                         HStack(spacing: 5) {
                             Circle().fill(palette.color(id)).frame(width: 7, height: 7)
                             Text("\(id.displayName) \(StatsText.percent(Double(t) / Double(max(summary.tokens, 1))))")
@@ -701,7 +706,8 @@ private struct Bars: View {
                 HStack(alignment: .bottom, spacing: 0) {
                     ForEach(bars) { bar in
                         VStack(spacing: 0) {
-                            ForEach([ProviderID.codex, .claude], id: \.self) { id in
+                            // Claude at the bottom, as before the other subscriptions were counted.
+                            ForEach(ProviderID.allCases.reversed(), id: \.self) { id in
                                 let t = bar.tokens[id] ?? 0
                                 if t > 0 {
                                     Rectangle().fill(palette.color(id)).frame(height: g.size.height * CGFloat(t) / peak)
@@ -1006,12 +1012,22 @@ private struct ModelRow: View {
     let model: StatsSummary.Model
     let palette: StatsPalette
 
+    private var name: some View {
+        Text(ModelName.display(model.name)).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+    }
+
+    private var tokens: some View {
+        Text(Format.tokens(model.tokens)).font(.system(size: 11.5)).foregroundStyle(palette.ink2).fixedSize()
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(palette.color(model.provider)).frame(width: 6, height: 6)
-            Text(ModelName.display(model.name)).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                .layoutPriority(1)
-            Text(Format.tokens(model.tokens)).font(.system(size: 11.5)).foregroundStyle(palette.ink2)
+            // A long name ("Grok 4.7 Build Fast") keeps its words and drops the count, which its tip has.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { name; tokens }
+                name
+            }
             Spacer(minLength: 4)
             Text(model.speed.map { "\(Int($0.rounded())) tok/s" } ?? "\u{2014}")
                 .frame(width: 62, alignment: .trailing)
@@ -1035,7 +1051,7 @@ private struct AllModels: View {
         let palette = StatsPalette(scheme)
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach([ProviderID.claude, .codex], id: \.self) { id in
+                ForEach(ProviderID.allCases, id: \.self) { id in
                     let mine = models.filter { $0.provider == id }
                     if !mine.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {

@@ -16,6 +16,6 @@ Tinybar reads both the same way, in `Usage/ForkHistory.swift`, into the same dai
 
 ## Consequences
 
-- Stats counts every Provider's tokens and cost. Prompts, tool calls and the other Activity figures still come from Claude Code and Codex only, and the note about partly read Activity covers only those two.
+- Stats counts every Provider's tokens and cost. Prompts, tool calls and the other Activity figures still come from Claude Code and Codex only, and the note about partly read Activity covers only those two. On the card, Claude and Codex keep its two tones and the others take their own colour; Gemini's is now its spark's green, as its blue was Grok's on a chart.
 - Both formats are undocumented and T3 Code's readers are the reference. If either changes, a file reads as nothing until the reader follows; it never stops the other sources.
 - Only this Mac's Grok and Antigravity history is read, not the SSH hosts' (FORK.md).
