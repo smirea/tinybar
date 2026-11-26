@@ -108,7 +108,7 @@ struct OverviewBarsRow: View {
             }
             if let snapshot, !snapshot.windows.isEmpty {
                 Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 5) {
-                    ForEach(snapshot.windows.filter { model.settings.showsBar(id, $0) }) { window in
+                    ForEach(snapshot.windows.weeklyFirst.filter { model.settings.showsBar(id, $0) }) { window in
                         BarsWindowRow(window: window, provider: id, asOf: asOf, showsPercent: model.settings.barsShowPercent)
                     }
                 }
@@ -298,7 +298,7 @@ struct OverviewBarsSection: View {
 
     var body: some View {
         let rows = model.enabledProviders.flatMap { id in
-            (model.providers[id]?.snapshot?.windows ?? []).map { (key: "\(id.rawValue).\($0.id)", id: id, window: $0) }
+            (model.providers[id]?.snapshot?.windows ?? []).weeklyFirst.map { (key: "\(id.rawValue).\($0.id)", id: id, window: $0) }
         }
         @Bindable var settings = model.settings
         SettingsSection("Overview bars", footer: "Turn off the limits you don't need to see at a glance. Their provider pages still show them.") {
@@ -316,5 +316,13 @@ struct OverviewBarsSection: View {
                 }
             }
         }
+    }
+}
+
+extension [LimitWindow] {
+    /// The account-wide weekly limit leads the bars; the rest keep the provider's order.
+    var weeklyFirst: [LimitWindow] {
+        let isMainWeekly = { (w: LimitWindow) in w.kind == .weekly && !w.isModelSpecific }
+        return filter(isMainWeekly) + filter { !isMainWeekly($0) }
     }
 }
