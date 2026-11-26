@@ -112,24 +112,6 @@ private func codexLines(context: Int, output: Int) -> String {
     #expect(banked?.first?.id == "claude-0")
 }
 
-/// The server picks the surface from the User-Agent; only the CLI's own shape is eligible.
-@Test func claudeUserAgentMatchesTheCLI() {
-    #expect(ClaudeUsageAPI.userAgent.hasPrefix("claude-cli/"))
-    #expect(ClaudeUsageAPI.userAgent.hasSuffix(" (external, cli)"))
-}
-
-@Test func resetGrantQueryFallsBackOnRefusal() async throws {
-    let url = URL(string: "https://api.anthropic.com/api/oauth/usage")!
-    var asked: [String?] = []
-    let data = try await ClaudeUsageAPI.withResetGrants(url) { u, passing in
-        asked.append(u.query)
-        if u.query != nil, passing.contains(403) { throw HTTP.Status(code: 403) }
-        return Data("ok".utf8)
-    }
-    #expect(asked == ["cedar_ember=1", nil])
-    #expect(String(decoding: data, as: UTF8.self) == "ok")
-}
-
 // MARK: Incidents
 
 @Test func statuspageCountsOnlyRelevantComponents() throws {

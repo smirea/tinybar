@@ -1,10 +1,18 @@
 import Foundation
 
-/// A short-lived `claude` in its SDK mode (stream-json over stdio), asked for usage and then killed
-/// (ADR 0016). Claude Code settles its own login before it reads usage, refreshing and saving an
-/// expired one, so this is how an expired login comes back without Tinybar touching a token.
-/// No prompt is ever sent, so nothing reaches a model.
+/// A short-lived `claude` in its SDK mode (stream-json over stdio), asked for usage and then killed,
+/// as T3 Code reads Claude limits (ADR 0016). Claude Code settles its own login before it reads
+/// usage, refreshing and saving an expired one, so Tinybar never touches a token. No prompt is ever
+/// sent, so nothing reaches a model.
 enum ClaudeCLIUsage {
+    private struct Initialize: Decodable {
+        var account: Account?
+
+        struct Account: Decodable {
+            var subscriptionType: String?
+        }
+    }
+
     private struct Usage: Decodable {
         var rateLimitsAvailable: Bool?
         var rateLimits: ClaudeUsageAPI.UsageResponse?
@@ -15,17 +23,28 @@ enum ClaudeCLIUsage {
         }
     }
 
-    static func fetch(folder: URL?, timeout: TimeInterval = 30) async throws -> ClaudeUsageAPI.UsageResponse {
-        guard let executable = Paths.locateCLI("claude") else { throw ProviderError.loginExpired }
-        let data = try await Task.detached(priority: .userInitiated) {
+    static func fetch(folder: URL?, timeout: TimeInterval = 30) async throws -> ProviderSnapshot {
+        guard let executable = Paths.locateCLI("claude") else { throw ProviderError.notConfigured }
+        let (initData, usageData) = try await Task.detached(priority: .userInitiated) {
             try readUsage(executable: executable, folder: folder, timeout: timeout)
         }.value
-        guard let usage = try? JSONDecoder().decode(Usage.self, from: data) else {
+        guard let usage = try? JSONDecoder().decode(Usage.self, from: usageData) else {
             throw ProviderError.unexpected("Unexpected Claude Code usage response")
         }
         // Without rate limits the CLI isn't signed in to a subscription it can read limits for.
         guard usage.rateLimitsAvailable == true, let limits = usage.rateLimits else { throw ProviderError.loginExpired }
-        return limits
+        let plan = (try? JSONDecoder().decode(Initialize.self, from: initData))?.account?.subscriptionType.flatMap(planName)
+        var snapshot = ClaudeUsageAPI.snapshot(from: limits, plan: plan)
+        snapshot.source = .cliProcess
+        return snapshot
+    }
+
+    /// The CLI names the plan in full ("Claude Max"); the card already says Claude.
+    static func planName(_ subscription: String) -> String? {
+        var name = subscription.trimmingCharacters(in: .whitespaces)
+        if name.lowercased().hasPrefix("claude ") { name = String(name.dropFirst("claude ".count)) }
+        guard !name.isEmpty else { return nil }
+        return name.prefix(1).uppercased() + name.dropFirst()
     }
 
     /// The flags the Agent SDK uses for a capabilities probe, minus everything a usage read doesn't
@@ -36,8 +55,8 @@ enum ClaudeCLIUsage {
         "--strict-mcp-config", "--mcp-config", #"{"mcpServers":{}}"#,
     ]
 
-    /// The `response` of the `get_usage` control request, as JSON.
-    private static func readUsage(executable: String, folder: URL?, timeout: TimeInterval) throws -> Data {
+    /// The `response`s of the `initialize` and `get_usage` control requests, as JSON.
+    private static func readUsage(executable: String, folder: URL?, timeout: TimeInterval) throws -> (Data, Data) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -93,9 +112,9 @@ enum ClaudeCLIUsage {
         }
 
         try send("init", ["subtype": "initialize"])
-        _ = try response("init")
+        let initialized = try JSONSerialization.data(withJSONObject: response("init"))
         // skip_behaviors: only the limits are wanted, not a scan of every local transcript.
         try send("usage", ["subtype": "get_usage", "skip_behaviors": true])
-        return try JSONSerialization.data(withJSONObject: response("usage"))
+        return (initialized, try JSONSerialization.data(withJSONObject: response("usage")))
     }
 }

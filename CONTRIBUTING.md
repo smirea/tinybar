@@ -36,7 +36,7 @@ write code. Docs-only fixes are the exception.
 Developer tools:
 
 ```sh
-swift run tinybar-cli limits [--browser] [--swap] [--opted-in] [--provider=<id>]   # limits and run-out times, with any other accounts
+swift run tinybar-cli limits [--swap] [--opted-in] [--provider=<id>]   # limits and run-out times, with any other accounts
 swift run tinybar-cli cookies              # which browser holds session cookies
 swift run tinybar-cli ingest [db]          # ingest Claude + Codex logs and OpenCode's database
 swift run tinybar-cli usage [db]           # print usage summaries

@@ -150,22 +150,6 @@ private func tempRoot() throws -> (URL, URL) {
     #expect(s.windows[1].isModelSpecific)
 }
 
-@Test func parsesClaudeCredentials() throws {
-    let json = Data(#"{"claudeAiOauth":{"accessToken":"tok","expiresAt":4102444800000,"subscriptionType":"max","rateLimitTier":"default_claude_max_5x"}}"#.utf8)
-    let c = try ClaudeCredentials.parse(json)
-    #expect(c.accessToken == "tok")
-    #expect(!c.isExpired)
-    #expect(c.planName == "Max 5x")
-    #expect(throws: ProviderError.self) { try ClaudeCredentials.parse(Data(#"{"mcpOAuth":{}}"#.utf8)) }
-}
-
-@Test func anExpiredCredentialsFileDoesNotHideAFresherKeychainLogin() {
-    let stale = ClaudeCredentials(accessToken: "file", expiresAt: Date(timeIntervalSince1970: 1_000))
-    let fresh = ClaudeCredentials(accessToken: "keychain", expiresAt: Date(timeIntervalSince1970: 2_000))
-    #expect(ClaudeCredentials.freshest([stale, fresh])?.accessToken == "keychain")
-    #expect(ClaudeCredentials.freshest([fresh, stale])?.accessToken == "keychain")
-}
-
 // MARK: Cookies
 
 @Test func decryptsChromiumV10Cookie() throws {
@@ -188,5 +172,4 @@ private func tempRoot() throws -> (URL, URL) {
     let cookies = ["tok.0": "abc", "tok.1": "def", "other": "x"]
     #expect(BrowserCookies.joined("tok", in: cookies) == "abcdef")
     #expect(BrowserCookies.joined("other", in: cookies) == "x")
-    #expect(ChatGPTWebSession.cookieHeader(["__Secure-next-auth.session-token": "a", "_ga": "b"]) == "__Secure-next-auth.session-token=a")
 }

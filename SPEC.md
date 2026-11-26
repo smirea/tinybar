@@ -48,20 +48,15 @@ Known CodexBar pitfalls to avoid: full-corpus rescans (#2538), competing caches 
 For each Provider, the source order is inspired by CodexBar and everything is strictly read-only (ADR 0001).
 
 ### Claude
-1. **CLI OAuth**: read the token from `~/.claude/.credentials.json` while it holds an unexpired one, else whichever of that file and the Keychain item `Claude Code-credentials` expires later (on macOS Claude Code keeps its login in the Keychain, so the file may hold only MCP logins or an expired copy).
-   → `GET https://api.anthropic.com/api/oauth/usage?cedar_ember=1`, with the same headers the official CLI sends. `cedar_ember=1` adds the Banked Resets ("Reset for free" grants), as claude.ai asks for them. The plan name comes from the subscription type the CLI stores with its token. An account it isn't open to answers 400 or 403; then the plain request is sent once. Grant ids are redemption handles and are never read; only grants that are not paused, have resets left and are inside their start and end count, once per reset left.
-   When the token has expired or the request answers 401 or 403, `claude` runs once in its SDK mode (stream-json, no settings, hooks, MCP servers or saved session) and answers the `get_usage` control request. Claude Code renews its own login first, so later checks read the renewed token (ADR 0016).
-2. **Browser cookie fallback** (opt-in in Settings, ADR 0005): `sessionKey` from Chromium browsers or Firefox → `claude.ai/api/organizations/{id}/usage`. Safari is out (needs Full Disk Access).
+Only through Claude Code itself, as T3 Code reads it (ADR 0016): a short-lived `claude` in its SDK mode (`--input-format stream-json`, no settings files, hooks, MCP servers, IDE connection or saved session) answers the `initialize` and `get_usage` control requests and is killed. No prompt is sent. Claude Code settles its own login first, refreshing and saving an expired one, so a login only goes Stale when the CLI can't renew it. Limits come from `rate_limits` in the answer, the same shape as `/api/oauth/usage`; the plan name from the account `initialize` reports. Tinybar never reads the token. Banked Resets show only when the answer carries `cedar_ember`; grant ids are redemption handles and are never read; only grants that are not paused, have resets left and are inside their start and end count, once per reset left.
+A login is detected by `.credentials.json` or the Keychain item `Claude Code-credentials` existing (an attribute-only lookup), and whose it is from `oauthAccount` in `~/.claude.json`.
 
 Displayed: 5h session window, weekly window, model-specific weekly windows (e.g. Opus/Sonnet), extra usage spend if present, Banked Resets, and a Reset time for each.
-Honor `Retry-After`; on HTTP 429 with no header, back off 5 minutes.
 
 ### Codex
-1. **CLI OAuth**: read `~/.codex/auth.json` (respect `CODEX_HOME`).
-   → `GET https://chatgpt.com/backend-api/wham/usage` for the 5h and weekly windows, Resets and credits.
-   → `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` for Banked Resets (status and expiry). Using one goes through the app-server below, never this endpoint (ADR 0014).
-2. **CLI app-server fallback**: `codex -s read-only -a never app-server`, JSON-RPC `account/rateLimits/read`, with the login's `CODEX_HOME` for an added folder. The process is short-lived and terminated after the call. The same process, with the Account's `CODEX_HOME`, runs `account/rateLimitResetCredit/consume` when the user confirms the Banked Resets line's reset button: once, or twice when a window the reset refills still has more than 20% left.
-3. **Browser cookie fallback** (opt-in): chatgpt.com session cookie → `/api/auth/session` access token → the `wham` endpoints. A session the browser has not refreshed (`error: RefreshAccessTokenError`) counts as expired.
+Only through the Codex CLI, as T3 Code reads it (ADR 0016): `codex -s read-only -a never app-server` with the login's `CODEX_HOME`, JSON-RPC `account/read` and then `account/rateLimits/read`. No account in the first answer means the CLI couldn't sign in, even after refreshing, and the login is Stale. The process is short-lived and terminated after the call. The same process, with the Account's `CODEX_HOME`, runs `account/rateLimitResetCredit/consume` when the user confirms the Banked Resets line's reset button: once, or twice when a window the reset refills still has more than 20% left (ADR 0014).
+A login is detected by `auth.json` holding a ChatGPT login (respect `CODEX_HOME`), and whose it is from the email in its `id_token`.
+CLIs are found on the login shell's PATH (`$SHELL -ilc`, read once), as T3 Code finds them, then in the usual install folders.
 
 Displayed: 5h window, weekly window, model-specific windows if present, credits, Banked Resets.
 
@@ -190,7 +185,7 @@ view, so switching never resizes anything. Only the page in view is built, and t
 
 **Settings** (replaces the page, back with Esc): two levels, so the first fits at a glance.
 - **First level**: Subscriptions, a row per Provider with its state ("Off", its email, "3 accounts") opening its page; Other logins: Add folder… and Copy prompt for your agent, with any added folder that holds no login (§15); General: launch at login, notifications, hide percentage, show percentages as used, and Auto for the menu bar. The running version sits at the bottom, next to a Report a bug link that opens the GitHub bug form with the version and macOS filled in.
-- **A subscription's page** slides in from the right, and Back or Esc returns to the first level: Show <Provider>, its Accounts with where each is read from (the default login, a folder found in the home folder with its toggle, an added folder with a remove button, other Copilot users, "Read accounts from claude-swap"), and for Claude and Codex the browser cookie fallback (off by default; enabling it may trigger a macOS Keychain prompt for the browser's storage key).
+- **A subscription's page** slides in from the right, and Back or Esc returns to the first level: Show <Provider>, its Accounts with where each is read from (the default login, a folder found in the home folder with its toggle, an added folder with a remove button, other Copilot users, "Read accounts from claude-swap").
 - A Provider is on by default only when its login is found; one turned on or off by hand stays that way.
 
 ### Run-out Time
@@ -497,7 +492,7 @@ A Provider has one or more Accounts, and its own Limit Windows are their Pool. W
    - The row marked `active` is the default login when their emails match; the default login's data wins and the row adds only its alias. During a switch they can briefly disagree, until the next check.
    - Accounts read this way show no plan name and no Banked Resets.
 
-The browser fallback's numbers (§4) aren't filed under the CLI's login, since that browser may be signed in as someone else: the default login then counts as having no readable email.
+Cursor's browser-session numbers (§4) aren't filed under the app's login, since that browser may be signed in as someone else: the default login then counts as having no readable email.
 
 Cursor and Gemini have only the default login: Cursor keeps one per app, and the Antigravity CLI always uses `~/.gemini/antigravity-cli`.
 

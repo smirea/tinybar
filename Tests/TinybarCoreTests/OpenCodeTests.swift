@@ -800,7 +800,7 @@ private func openCodeStatus(go: String, reason: String = "none", free: String = 
 }
 
 @Test func openCodeSubscriptionIsAProvider() {
-    #expect(StatusFeed.hasFeed(.opencode) && !ProviderID.opencode.hasBrowserFallback && !ProviderID.opencode.hasActivity)
+    #expect(StatusFeed.hasFeed(.opencode) && !ProviderID.opencode.hasActivity)
     #expect(ProviderID.opencode.loginHint == "run `opencode auth login`")
 }
 

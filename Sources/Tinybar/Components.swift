@@ -355,18 +355,6 @@ struct RowButtonStyle: ButtonStyle {
 // MARK: Provider presentation
 
 extension ProviderID {
-    var webDomain: String {
-        switch self {
-        case .claude: "claude.ai"
-        case .codex: "chatgpt.com"
-        case .gemini: "antigravity.google"
-        case .cursor: "cursor.com"
-        case .opencode: "opencode.ai"
-        case .copilot: "github.com"
-        case .grok: "grok.com"
-        }
-    }
-
     /// One colour per subscription for dots, charts and tracks, taken from its logo. Codex follows
     /// OpenAI's monochrome mark, so it is black in light mode and white in dark mode.
     var color: Color {

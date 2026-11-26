@@ -1,10 +1,8 @@
 import Foundation
 
-/// Read-only calls to the endpoints Claude Code itself uses for `/usage`.
+/// The shape of Claude Code's usage answer (`rate_limits` in `get_usage`, the same as
+/// `/api/oauth/usage`), and how it maps to limits.
 enum ClaudeUsageAPI {
-    static let baseURL = URL(string: "https://api.anthropic.com")!
-    static let betaHeader = "oauth-2025-04-20"
-
     // MARK: Wire types
 
     struct UsageResponse: Decodable {
@@ -156,47 +154,6 @@ enum ClaudeUsageAPI {
         }
     }
 
-    // MARK: Requests
-
-    static func fetchUsage(accessToken: String, session: URLSession) async throws -> UsageResponse {
-        let data = try await withResetGrants(baseURL.appendingPathComponent("api/oauth/usage")) { url, passing in
-            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(betaHeader, forHTTPHeaderField: "anthropic-beta")
-            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-            return try await HTTP.send(request, session: session, providerName: "Claude", passing: passing)
-        }
-        do {
-            return try JSONDecoder().decode(UsageResponse.self, from: data)
-        } catch {
-            throw ProviderError.unexpected("Unexpected Claude usage response")
-        }
-    }
-
-    /// Asks a usage endpoint to include Banked Resets (`cedar_ember=1`, as claude.ai does). An
-    /// account the query isn't open to gets 400 or 403; then the plain request is sent once, so
-    /// the limits still show. `send` throws `HTTP.Status` for the codes it's given.
-    static func withResetGrants(
-        _ url: URL, send: (URL, Set<Int>) async throws -> Data) async throws -> Data
-    {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "cedar_ember", value: "1")]
-        do {
-            return try await send(components.url!, [400, 403])
-        } catch is HTTP.Status {
-            return try await send(url, [])
-        }
-    }
-
-    /// Matches the official CLI's User-Agent, using the installed Claude Code version when known.
-    /// The server reads the surface from it: any other shape gets `cedar_ember` back as
-    /// ineligible (`"ineligible_reason": "surface"`), with no grants.
-    static var userAgent: String {
-        "claude-cli/\(ClaudeCodeVersion.installed ?? "2.1.0") (external, cli)"
-    }
-
     // MARK: Mapping
 
     static func snapshot(from usage: UsageResponse, plan: String?, now: Date = Date()) -> ProviderSnapshot {
@@ -244,30 +201,4 @@ enum ClaudeUsageAPI {
             provider: .claude, plan: plan, windows: windows,
             bankedResets: banked.isEmpty ? nil : banked, extraUsage: extra, fetchedAt: now)
     }
-}
-
-/// Claude Code's version from its install, for the User-Agent. Read once, no process spawn.
-enum ClaudeCodeVersion {
-    static let installed: String? = {
-        let fm = FileManager.default
-        // Native installer keeps versions under ~/.local/share/claude/versions/<semver>.
-        let versionsDir = Paths.home.appendingPathComponent(".local/share/claude/versions")
-        if let names = try? fm.contentsOfDirectory(atPath: versionsDir.path) {
-            let versions = names.filter { $0.first?.isNumber == true }
-            if let newest = versions.max(by: { $0.compare($1, options: .numeric) == .orderedAscending }) {
-                return newest
-            }
-        }
-        // npm global install.
-        for prefix in ["/opt/homebrew/lib", "/usr/local/lib"] {
-            let pkg = URL(fileURLWithPath: "\(prefix)/node_modules/@anthropic-ai/claude-code/package.json")
-            if let data = try? Data(contentsOf: pkg),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let v = json["version"] as? String
-            {
-                return v
-            }
-        }
-        return nil
-    }()
 }

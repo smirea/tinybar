@@ -175,23 +175,6 @@ private func snapshot(_ percent: Double, resets: Date) -> ProviderSnapshot {
     #expect(s.projects.count == 1)  // "/a/repo" and deleted "repo" merge by name
 }
 
-// MARK: Codex API mapping
-
-@Test func mapsUsageResponse() throws {
-    let json = Data(#"""
-    {"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":12,"reset_at":1790000000,"limit_window_seconds":18000},
-     "secondary_window":{"used_percent":40,"reset_at":1790500000,"limit_window_seconds":604800}},
-     "credits":{"has_credits":true,"unlimited":false,"balance":"12.5"},
-     "additional_rate_limits":[{"limit_name":"GPT-5.3-Codex-Spark","rate_limit":{"primary_window":{"used_percent":5,"reset_at":1790000000,"limit_window_seconds":18000}}}, {"bogus":true}]}
-    """#.utf8)
-    let usage = try JSONDecoder().decode(CodexUsageAPI.UsageResponse.self, from: json)
-    let s = CodexUsageAPI.snapshot(from: usage, bankedResets: nil)
-    #expect(s.plan == "Pro")
-    #expect(s.windows.map(\.id) == ["session", "weekly", "gpt-5-3-codex-spark-session"])
-    #expect(s.windows[2].isModelSpecific)
-    #expect(s.credits?.balance == 12.5)
-}
-
 // MARK: Run-out forecast
 
 private func fiveHour(used: Double, elapsedHours: Double, asOf: Date) -> LimitWindow {

@@ -151,23 +151,6 @@ final class Settings {
         defaults.set(kept, forKey: AddedLoginFolders.key)
     }
 
-    // MARK: Browser fallback
-
-    /// Read from provider fetches off the main actor, so kept in a thread-safe box.
-    let browserFallbackFlags = BrowserFallbackFlags()
-
-    func isBrowserFallbackEnabled(_ id: ProviderID) -> Bool {
-        browserFallbackFlags.isEnabled(id)
-    }
-
-    func setBrowserFallback(_ id: ProviderID, _ enabled: Bool) {
-        browserFallbackFlags.set(id, enabled)
-        browserFallbackRevision += 1
-    }
-
-    /// Bumped on change so SwiftUI re-reads the flags.
-    private(set) var browserFallbackRevision = 0
-
     // MARK: Alert state
 
     func loadAlertState() -> LimitAlertPlanner {
@@ -179,22 +162,5 @@ final class Settings {
 
     func saveAlertState(_ planner: LimitAlertPlanner) {
         defaults.set(try? JSONEncoder().encode(planner), forKey: "alertState")
-    }
-}
-
-/// Opt-in per provider; off by default because reading Chromium cookies triggers a one-time
-/// macOS Keychain prompt for the browser's "Safe Storage" key.
-final class BrowserFallbackFlags: @unchecked Sendable {
-    private let lock = NSLock()
-    private let defaults = UserDefaults.standard
-
-    func isEnabled(_ id: ProviderID) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return defaults.bool(forKey: "browserFallback.\(id.rawValue)")
-    }
-
-    func set(_ id: ProviderID, _ enabled: Bool) {
-        lock.lock(); defer { lock.unlock() }
-        defaults.set(enabled, forKey: "browserFallback.\(id.rawValue)")
     }
 }

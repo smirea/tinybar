@@ -2,9 +2,8 @@ import Foundation
 import TinybarCore
 
 // Developer tool: exercises TinybarCore without the UI.
-//   tinybar-cli limits [--browser] [--swap] [--opted-in] [--provider=<id>]  fetch limits (optionally allowing the
-//                               browser fallback, reading claude-swap's accounts, or what Copilot only
-//                               reads if turned on in Settings)
+//   tinybar-cli limits [--swap] [--opted-in] [--provider=<id>]  fetch limits (optionally reading
+//                               claude-swap's accounts, or what Copilot only reads if turned on in Settings)
 //   tinybar-cli cookies         check which browser holds session cookies
 //   tinybar-cli ingest [db]     ingest Codex logs into a store
 //   tinybar-cli usage [db]      print usage summaries
@@ -27,10 +26,10 @@ func printWindows(_ s: ProviderSnapshot) {
     }
 }
 
-func printLimits(browser: Bool, swap: Bool, optedIn: Bool) async {
+func printLimits(swap: Bool, optedIn: Bool) async {
     let providers: [any UsageProvider] = [
-        ClaudeProvider(allowBrowser: { browser }),
-        CodexProvider(allowBrowser: { browser }),
+        ClaudeProvider(),
+        CodexProvider(),
         GeminiProvider(),
         CursorProvider(),
         OpenCodeProvider(),
@@ -84,7 +83,7 @@ func printLimits(browser: Bool, swap: Bool, optedIn: Bool) async {
 }
 
 func printCookies() {
-    for (domain, name) in [("claude.ai", "sessionKey"), ("chatgpt.com", "__Secure-next-auth.session-token"), ("cursor.com", "WorkosCursorSessionToken")] {
+    for (domain, name) in [("cursor.com", "WorkosCursorSessionToken")] {
         if let found = BrowserCookies.find(domain: domain, required: [name]) {
             let value = BrowserCookies.joined(name, in: found.cookies) ?? ""
             print("\(domain): found \(name) in \(found.browser) (\(value.count) chars)")
@@ -179,7 +178,7 @@ func printStatus() async {
 }
 
 switch command {
-case "limits": await printLimits(browser: args.contains("--browser"), swap: args.contains("--swap"), optedIn: args.contains("--opted-in"))
+case "limits": await printLimits(swap: args.contains("--swap"), optedIn: args.contains("--opted-in"))
 case "cookies": printCookies()
 case "web": await printWeb()
 case "ingest": try await ingest()
@@ -190,12 +189,12 @@ case "backfill-long": try await backfillLong()
 case "repair-projects": try await repairProjects()
 case "assign-machines": try await assignMachines()
 case "status": await printStatus()
-default: print("usage: tinybar-cli [limits [--browser] [--opted-in] [--provider=<id>]|cookies|ingest|usage|stats|backfill|backfill-long|status] [db-path]")
+default: print("usage: tinybar-cli [limits [--opted-in] [--provider=<id>]|cookies|ingest|usage|stats|backfill|backfill-long|status] [db-path]")
 }
 
 // `tinybar-cli web`: exercises only the browser-cookie paths.
 func printWeb() async {
-    for provider in ProviderID.allCases where provider.hasBrowserFallback || provider == .cursor {
+    for provider in [ProviderID.cursor] {
         do {
             let (browser, s) = try await BrowserFallback.fetch(provider)
             print("\(provider.displayName) via \(browser): " + s.windows.map { "\($0.title) \(Int($0.remainingPercent))% left" }.joined(separator: ", "))

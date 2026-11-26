@@ -90,16 +90,16 @@ and add `--zap` to also delete your history and settings.
 Tinybar uses the logins your official CLIs already store and calls the same endpoints they call for
 `/usage`. It never refreshes a token or sends a prompt. The exceptions: using a Codex banked reset when
 you confirm it in the popover, which goes through the Codex CLI ([ADR 0014](docs/adr/0014-using-codex-banked-resets.md)), and running
-`grok models` when a Grok login expires, so the Grok CLI renews it ([ADR 0015](docs/adr/0015-grok-renewed-through-its-cli.md)). An expired Claude or Codex login
-is read through its own CLI, which renews it ([ADR 0016](docs/adr/0016-claude-renewed-through-its-cli.md)). When a login
+`grok models` when a Grok login expires, so the Grok CLI renews it ([ADR 0015](docs/adr/0015-grok-renewed-through-its-cli.md)). Claude and Codex limits
+are read only through their own CLIs, as T3 Code reads them, so those CLIs keep their logins fresh ([ADR 0016](docs/adr/0016-limits-only-through-the-clis.md)). When a login
 the CLI can't renew expires, the card turns stale until you run `claude`, `codex` or `agy` once, open Cursor, or run
 `opencode auth login`, `copilot login`, `gh auth login` or `grok`.
 [ADR 0001](docs/adr/0001-read-only-credentials.md) explains why.
 
 | Provider | Login | Limits from | Token history |
 | -------- | ----- | ----------- | ------------- |
-| Claude | `~/.claude/.credentials.json` or the `Claude Code-credentials` Keychain item | `api.anthropic.com/api/oauth/usage`, else `claude`'s own `get_usage` | `~/.claude/projects` |
-| Codex | `~/.codex/auth.json` | `chatgpt.com/backend-api/wham/usage`, else a read-only `codex app-server` | `~/.codex/sessions`, `~/.codex/archived_sessions` |
+| Claude | Claude Code's own (`claude` in SDK mode) | `claude`'s `get_usage` | `~/.claude/projects` |
+| Codex | the Codex CLI's own (`~/.codex/auth.json`) | a read-only `codex app-server` | `~/.codex/sessions`, `~/.codex/archived_sessions` |
 | Gemini | none | `agy -p /usage`, Antigravity CLI's own report | none |
 | Cursor | Cursor.app's `state.vscdb`, else your browser's `cursor.com` cookie | `cursor.com/api/usage-summary` | none |
 | OpenCode Go | OpenCode's `~/.local/share/opencode/opencode.db` or `auth.json` | `opencode.ai/zen/go/v1/usage` | `opencode.db`, Go subscription only |
@@ -109,14 +109,10 @@ the CLI can't renew expires, the card turns stale until you run `claude`, `codex
 The only other requests carry no login. Prices come from `models.dev` once a day, and the latest
 release from GitHub every 6 hours and on Check now. The Claude, OpenAI, Cursor, OpenCode, GitHub and xAI status pages are checked with every poll.
 
-Notifications are requested once, for alerts. Tinybar reads Claude's Keychain item through
-`/usr/bin/security`, the tool Claude Code itself uses, so there is no prompt. Copilot is picked up by
+Notifications are requested once, for alerts. Copilot is picked up by
 itself if the Copilot CLI's user is also in `gh`, or from an editor plugin's login. VS Code keeps its
 login to itself, so with VS Code alone, sign in to `gh` and turn Copilot on in Settings. If only the Copilot CLI
-has your login, turning Copilot on makes macOS ask for that Keychain item. Choose Always Allow, or it asks again at every poll. If a CLI login is
-missing or expired, Tinybar can read your browser session instead. This fallback is off by default, and a
-Chromium browser asks once for its "Safe Storage" key. Firefox needs nothing, and Safari isn't
-supported.
+has your login, turning Copilot on makes macOS ask for that Keychain item. Choose Always Allow, or it asks again at every poll.
 
 ## Performance
 

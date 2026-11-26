@@ -1442,14 +1442,12 @@ private struct SubscriptionRow: View {
     }
 }
 
-/// One subscription's settings: whether Tinybar reads it, its logins and where each comes from,
-/// and its browser fallback.
+/// One subscription's settings: whether Tinybar reads it, and its logins and where each comes from.
 private struct SubscriptionPage: View {
     let model: AppModel
     let id: ProviderID
 
     var body: some View {
-        @Bindable var settings = model.settings
         VStack(alignment: .leading, spacing: 18) {
             SettingsSection(nil, footer: id == .copilot
                 ? "Copilot reads your Copilot CLI, editor plugin or gh login. If only the Copilot CLI has it, macOS asks for Keychain access: choose Always Allow."
@@ -1461,24 +1459,6 @@ private struct SubscriptionPage: View {
             }
             if LoginFolderKind.of(id) != nil {
                 AccountsSection(model: model, id: id)
-            }
-            if id.hasBrowserFallback {
-                SettingsSection(
-                    "Browser fallback",
-                    footer: "When the CLI login is missing or expired, read your signed-in browser session instead. Chromium browsers ask once for Keychain access.")
-                {
-                    let _ = settings.browserFallbackRevision
-                    SettingsToggle(isOn: Binding(
-                        get: { settings.isBrowserFallbackEnabled(id) },
-                        set: {
-                            settings.setBrowserFallback(id, $0)
-                            if $0 { Task { await model.refresh(force: true) } }
-                        }),
-                        first: true)
-                    {
-                        Text("Read \(id.webDomain)")
-                    }
-                }
             }
         }
         .padding(.top, 4)

@@ -1,7 +1,7 @@
 import Foundation
 
-/// OAuth tokens the Codex CLI stores in `auth.json`. Read-only: Tinybar never refreshes or
-/// rewrites them (ADR 0001).
+/// The login the Codex CLI stores in `auth.json`, only to tell whether there is a ChatGPT one and
+/// whose it is. Limits come through the CLI, never with this token (ADR 0016).
 public struct CodexCredentials: Sendable {
     public var accessToken: String
     public var accountId: String?

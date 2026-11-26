@@ -171,8 +171,10 @@ struct ProviderProcessTests {
         read initialize
         printf '%s\\n' '{"id":1,"result":{}}'
         read initialized
+        read account
+        printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
         read limits
-        printf '%s\\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25}}}}'
+        printf '%s\\n' '{"id":3,"result":{"rateLimits":{"primary":{"usedPercent":25}}}}'
         /bin/sleep 2
         """) { executable, pidFile in
             let response = try JSONDecoder().decode(CodexAppServer.Response.self, from: readLimits(executable, timeout: 5))
@@ -201,13 +203,27 @@ struct ProviderProcessTests {
             read initialize
             printf '%s\\n' '{"id":1,"result":{}}'
             read initialized
+            read account
+            printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
             read limits
-            printf '%s\\n' '{"id":2,"result":\(result)}'
+            printf '%s\\n' '{"id":3,"result":\(result)}'
             """) { executable, _ in
                 #expect(throws: ProviderError.unexpected("codex app-server: no result")) {
                     try readLimits(executable, timeout: 5)
                 }
             }
+        }
+    }
+
+    @Test func aCodexCLIWithNoAccountIsAnExpiredLogin() async throws {
+        try await withCLI("""
+        read initialize
+        printf '%s\\n' '{"id":1,"result":{}}'
+        read initialized
+        read account
+        printf '%s\\n' '{"id":2,"result":{"account":null,"requiresOpenaiAuth":true}}'
+        """) { executable, _ in
+            #expect(throws: ProviderError.loginExpired) { try readLimits(executable, timeout: 5) }
         }
     }
 
@@ -232,9 +248,11 @@ struct ProviderProcessTests {
         read initialize
         printf '%s\\n' '{"id":1,"result":{}}'
         read initialized
+        read account
+        printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
         read consume
         printf '%s\\n%s\\n' "$CODEX_HOME" "$consume" > '\(seen.path)'
-        printf '%s\\n' '{"id":2,"result":{"outcome":"nothingToReset"}}'
+        printf '%s\\n' '{"id":3,"result":{"outcome":"nothingToReset"}}'
         """) { executable, _ in
             let attempt = UUID()
             let outcome = try await CodexAppServer.useBankedReset(home: home, attempt: attempt, executable: executable, timeout: 5)

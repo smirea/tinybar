@@ -1,8 +1,8 @@
 import Foundation
 
 /// A short-lived `codex app-server` (sandboxed read-only, no approvals), asked one JSON-RPC
-/// question and then terminated. Lets the CLI use and refresh its own login: the fallback source
-/// for limits, and the only way Tinybar uses a Banked Reset (ADR 0014).
+/// question and then terminated. Lets the CLI use and refresh its own login: the only source for
+/// limits, as in T3 Code (ADR 0016), and the only way Tinybar uses a Banked Reset (ADR 0014).
 enum CodexAppServer {
     struct Response: Decodable {
         var rateLimits: Snapshot
@@ -192,8 +192,11 @@ enum CodexAppServer {
         try send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "tinybar", "version": "0.1.0"]]])
         _ = try response(id: 1)
         try send(["method": "initialized", "params": [String: Any]()])
-        try send(["id": 2, "method": method, "params": params])
-        let message = try response(id: 2)
+        // As T3 Code asks: with no account the CLI couldn't sign in, even after refreshing.
+        try send(["id": 2, "method": "account/read", "params": [String: Any]()])
+        guard (try response(id: 2)["result"] as? [String: Any])?["account"] is [String: Any] else { throw ProviderError.loginExpired }
+        try send(["id": 3, "method": method, "params": params])
+        let message = try response(id: 3)
         guard let result = message["result"] as? [String: Any] else { throw ProviderError.unexpected("codex app-server: no result") }
         return try JSONSerialization.data(withJSONObject: result)
     }

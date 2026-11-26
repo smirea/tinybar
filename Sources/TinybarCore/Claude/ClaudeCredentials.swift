@@ -1,36 +1,8 @@
 import Foundation
 
-/// The OAuth login Claude Code stores. Read-only: Tinybar never refreshes or rewrites it (ADR 0001).
-///
-/// Sources, in order:
-/// 1. `<config dir>/.credentials.json` (Linux-style installs, `CLAUDE_CONFIG_DIR`), while it's unexpired.
-/// 2. Otherwise, whichever of that file and the login Keychain item `Claude Code-credentials`, read via `/usr/bin/security`.
-///    Claude Code itself writes the item with that tool, so it is already on the item's access
-///    list and reading through it does not show a password prompt, unlike a direct
-///    Security.framework read from Tinybar's own binary.
-public struct ClaudeCredentials: Sendable {
-    public var accessToken: String
-    public var expiresAt: Date?
-    public var subscriptionType: String?
-    public var rateLimitTier: String?
-
-    public var isExpired: Bool {
-        guard let expiresAt else { return false }
-        return expiresAt <= Date()
-    }
-
-    /// "max" → "Max", "pro" → "Pro"; tier refines Max (e.g. "default_claude_max_20x" → "Max 20x").
-    public var planName: String? {
-        guard let sub = subscriptionType?.lowercased(), !sub.isEmpty else { return nil }
-        var name = sub.prefix(1).uppercased() + sub.dropFirst()
-        if sub == "max", let tier = rateLimitTier?.lowercased(),
-           let range = tier.range(of: #"\d+x"#, options: .regularExpression)
-        {
-            name += " \(tier[range])"
-        }
-        return name
-    }
-
+/// Where Claude Code keeps its login, only to tell whether there is one and whose it is. The token
+/// itself is never read: limits come through the CLI (ADR 0016).
+public enum ClaudeCredentials {
     static let keychainService = "Claude Code-credentials"
 
     /// The Keychain item of a login in another config folder. Claude Code names it with a hash of
@@ -54,21 +26,6 @@ public struct ClaudeCredentials: Sendable {
         return p.terminationStatus == 0
     }
 
-    public static func load(folder: URL? = nil) throws -> ClaudeCredentials {
-        let file = credentialFiles(folder: folder).lazy.compactMap { try? parse(Data(contentsOf: $0)) }.first
-        if let file, !file.isExpired { return file }
-        // Claude Code on macOS keeps its login in the Keychain, so a `.credentials.json` beside it can
-        // hold only MCP logins, or an expired copy from an older install.
-        let keychain = try readKeychain(service: keychainService(folder: folder)).flatMap { try? parse($0) }
-        guard let login = freshest([file, keychain].compactMap(\.self)) else { throw ProviderError.notConfigured }
-        return login
-    }
-
-    /// The login that stays valid longest; one with no expiry counts as never expiring.
-    static func freshest(_ logins: [ClaudeCredentials]) -> ClaudeCredentials? {
-        logins.max { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
-    }
-
     static func credentialFiles(folder: URL? = nil) -> [URL] {
         (folder.map { [$0] } ?? Paths.claudeConfigDirs()).map { $0.appendingPathComponent(".credentials.json") }
     }
@@ -76,7 +33,7 @@ public struct ClaudeCredentials: Sendable {
     /// Who is signed in, from the `oauthAccount` Claude Code keeps beside its settings. nil when it
     /// can't be told.
     public static func identity(folder: URL? = nil, env: [String: String] = ProcessInfo.processInfo.environment) -> LoginIdentity? {
-        // The folder `load` would take the token from, so limits are filed under whose they are.
+        // The folder Claude Code reads its login from, so limits are filed under whose they are.
         let dirs = folder.map { [$0] } ?? Paths.claudeConfigDirs(env: env)
         let configHome = dirs.first { FileManager.default.isReadableFile(atPath: $0.appendingPathComponent(".credentials.json").path) } ?? dirs[0]
         let base = folder ?? (env["CLAUDE_CONFIG_DIR"]?.isEmpty == false ? configHome : Paths.home)
@@ -98,44 +55,5 @@ public struct ClaudeCredentials: Sendable {
             email: email,
             organization: account["organizationUuid"] as? String,
             organizationName: account["organizationName"] as? String)
-    }
-
-    static func parse(_ data: Data) throws -> ClaudeCredentials {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let oauth = json["claudeAiOauth"] as? [String: Any],
-              let token = (oauth["accessToken"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !token.isEmpty
-        else { throw ProviderError.notConfigured }
-        let expiresMs = (oauth["expiresAt"] as? NSNumber)?.doubleValue
-        return ClaudeCredentials(
-            accessToken: token,
-            expiresAt: expiresMs.map { Date(timeIntervalSince1970: $0 / 1000) },
-            subscriptionType: oauth["subscriptionType"] as? String,
-            rateLimitTier: oauth["rateLimitTier"] as? String)
-    }
-
-    private static func readKeychain(service: String) throws -> Data? {
-        // If macOS ever shows an access prompt, don't hang the refresh on it.
-        guard let trimmed = ChildProcess.output(of: "/usr/bin/security", ["find-generic-password", "-s", service, "-w"], timeout: 5)
-        else { return nil }
-        // `security -w` prints hex for values it deems binary.
-        if !trimmed.hasPrefix("{"), let decoded = Data(hexString: trimmed) { return decoded }
-        return Data(trimmed.utf8)
-    }
-}
-
-extension Data {
-    init?(hexString: String) {
-        guard hexString.count % 2 == 0, hexString.allSatisfy(\.isHexDigit) else { return nil }
-        var bytes = [UInt8]()
-        bytes.reserveCapacity(hexString.count / 2)
-        var i = hexString.startIndex
-        while i < hexString.endIndex {
-            let j = hexString.index(i, offsetBy: 2)
-            guard let b = UInt8(hexString[i..<j], radix: 16) else { return nil }
-            bytes.append(b)
-            i = j
-        }
-        self.init(bytes)
     }
 }

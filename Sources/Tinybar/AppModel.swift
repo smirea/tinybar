@@ -93,10 +93,9 @@ final class AppModel {
         self.settings = settings
         logRoots = UsageStore.codexRoots + UsageStore.claudeRoots
         logWatcher = LogWatcher(roots: logRoots)
-        let browserFlags = settings.browserFallbackFlags
         sources = [
-            .claude: ClaudeProvider(allowBrowser: { browserFlags.isEnabled(.claude) }),
-            .codex: CodexProvider(allowBrowser: { browserFlags.isEnabled(.codex) }),
+            .claude: ClaudeProvider(),
+            .codex: CodexProvider(),
             .gemini: GeminiProvider(),
             .cursor: CursorProvider(),
             .opencode: OpenCodeProvider(),

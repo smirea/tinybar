@@ -264,26 +264,12 @@ enum CredentialDatabase {
 public enum BrowserFallback {
     public static func fetch(_ provider: ProviderID, session: URLSession = .tinybar) async throws -> (browser: String, snapshot: ProviderSnapshot) {
         switch provider {
-        case .claude:
-            guard let found = BrowserCookies.find(domain: "claude.ai", required: ["sessionKey"]),
-                  let key = found.cookies["sessionKey"]
-            else { throw ProviderError.notConfigured }
-            return (found.browser, try await ClaudeWebAPI.fetch(sessionKey: key, session: session))
-        case .codex:
-            guard let found = BrowserCookies.find(domain: "chatgpt.com", required: [ChatGPTWebSession.cookieName])
-            else { throw ProviderError.notConfigured }
-            let creds = try await ChatGPTWebSession.accessToken(cookies: found.cookies, session: session)
-            async let usage = CodexUsageAPI.fetchUsage(creds, session: session)
-            async let banked = try? CodexUsageAPI.fetchBankedResets(creds, session: session)
-            var snapshot = try await CodexUsageAPI.snapshot(from: usage, bankedResets: banked)
-            snapshot.source = .browser
-            return (found.browser, snapshot)
         case .cursor:
             let name = CursorUsageAPI.sessionCookie
             guard let found = BrowserCookies.find(domain: "cursor.com", required: [name]), let value = found.cookies[name]
             else { throw ProviderError.notConfigured }
             return (found.browser, try await CursorUsageAPI.fetch(cookieHeader: "\(name)=\(value)", source: .browser, session: session))
-        case .gemini, .opencode, .copilot, .grok:
+        case .claude, .codex, .gemini, .opencode, .copilot, .grok:
             throw ProviderError.notConfigured
         }
     }

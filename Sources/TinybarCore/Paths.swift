@@ -27,8 +27,25 @@ public enum Paths {
         cliDirectories(home: home).map { "\($0)/\(name)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    /// Where package managers and native installers put CLIs, in the order they're searched.
+    /// The login shell's PATH first, so the CLI found is the one the user runs in a terminal (as T3
+    /// Code reads it), then where package managers and native installers put CLIs.
     static func cliDirectories(home: URL = Paths.home) -> [String] {
+        var seen = Set<String>()
+        return (shellPATH + installDirectories(home: home)).filter { seen.insert($0).inserted }
+    }
+
+    /// Read once: an interactive login shell (`-ilc`), since version managers often extend PATH only
+    /// in `.zshrc`. Markers skip anything the shell's startup files print.
+    private static let shellPATH: [String] = {
+        let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.hasPrefix("/") ? $0 : nil } ?? "/bin/zsh"
+        let marker = "__TINYBAR_PATH__"
+        guard let output = ChildProcess.output(of: shell, ["-ilc", "printf '\(marker)%s\(marker)' \"$PATH\""], timeout: 10),
+              let start = output.range(of: marker), let end = output.range(of: marker, range: start.upperBound..<output.endIndex)
+        else { return [] }
+        return output[start.upperBound..<end.lowerBound].split(separator: ":").map(String.init).filter { $0.hasPrefix("/") }
+    }()
+
+    private static func installDirectories(home: URL) -> [String] {
         [
             home.appendingPathComponent(".local/bin").path,
             "/opt/homebrew/bin",

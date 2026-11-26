@@ -36,8 +36,7 @@ Tinybar handles credentials it doesn't own, so these are the areas of particular
   beside those logins are shown in the popover; pins, alert state and limit readings store a hash of
   them. The log paths in the local database can name one, since claude-swap names its `cswap run`
   profiles after the account.
-- **Browser cookies.** Off by default. When enabled, Tinybar reads session cookies for `claude.ai`,
-  `chatgpt.com` and (with the Cursor provider on) `cursor.com` only, decrypting Chromium cookies with the browser's "Safe Storage" Keychain key
+- **Browser cookies.** Only with the Cursor provider on, Tinybar reads session cookies for `cursor.com` only, decrypting Chromium cookies with the browser's "Safe Storage" Keychain key
   (cached in memory for the app's lifetime). Reading cookies for any other domain, or sending
   cookies to any host other than the one they belong to, is high severity.
 - **Network.** Tinybar talks to exactly seven places: `api.anthropic.com` / `claude.ai`,
@@ -45,9 +44,9 @@ Tinybar handles credentials it doesn't own, so these are the areas of particular
   (unauthenticated), plus status pages and release checks without a login. The `agy` child process talks to
   Google on its own. Any other destination, or any request that
   changes account state, is a bug.
-- **Child processes.** `codex -s read-only -a never app-server` for the Codex fallback,
+- **Child processes.** `codex -s read-only -a never app-server` for Codex limits,
   `claude --input-format stream-json` with no settings, hooks or MCP servers, answering only `initialize` and
-  `get_usage`, when a Claude login has expired (ADR 0016),
+  `get_usage`, for Claude limits (ADR 0016), `$SHELL -ilc` once to read the PATH CLIs are found on,
   `agy -p /usage --output-format json` (in an empty temporary directory) for Gemini,
   `cswap list --json` for claude-swap's accounts (only if turned on in Settings; it holds its own
   tokens and may renew idle logins itself),
