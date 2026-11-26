@@ -46,6 +46,8 @@ Tinybar handles credentials it doesn't own, so these are the areas of particular
   Google on its own. Any other destination, or any request that
   changes account state, is a bug.
 - **Child processes.** `codex -s read-only -a never app-server` for the Codex fallback,
+  `claude --input-format stream-json` with no settings, hooks or MCP servers, answering only `initialize` and
+  `get_usage`, when a Claude login has expired (ADR 0016),
   `agy -p /usage --output-format json` (in an empty temporary directory) for Gemini,
   `cswap list --json` for claude-swap's accounts (only if turned on in Settings; it holds its own
   tokens and may renew idle logins itself),

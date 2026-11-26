@@ -50,6 +50,7 @@ For each Provider, the source order is inspired by CodexBar and everything is st
 ### Claude
 1. **CLI OAuth**: read the token from `~/.claude/.credentials.json` while it holds an unexpired one, else whichever of that file and the Keychain item `Claude Code-credentials` expires later (on macOS Claude Code keeps its login in the Keychain, so the file may hold only MCP logins or an expired copy).
    → `GET https://api.anthropic.com/api/oauth/usage?cedar_ember=1`, with the same headers the official CLI sends. `cedar_ember=1` adds the Banked Resets ("Reset for free" grants), as claude.ai asks for them. The plan name comes from the subscription type the CLI stores with its token. An account it isn't open to answers 400 or 403; then the plain request is sent once. Grant ids are redemption handles and are never read; only grants that are not paused, have resets left and are inside their start and end count, once per reset left.
+   When the token has expired or the request answers 401 or 403, `claude` runs once in its SDK mode (stream-json, no settings, hooks, MCP servers or saved session) and answers the `get_usage` control request. Claude Code renews its own login first, so later checks read the renewed token (ADR 0016).
 2. **Browser cookie fallback** (opt-in in Settings, ADR 0005): `sessionKey` from Chromium browsers or Firefox → `claude.ai/api/organizations/{id}/usage`. Safari is out (needs Full Disk Access).
 
 Displayed: 5h session window, weekly window, model-specific weekly windows (e.g. Opus/Sonnet), extra usage spend if present, Banked Resets, and a Reset time for each.
@@ -59,7 +60,7 @@ Honor `Retry-After`; on HTTP 429 with no header, back off 5 minutes.
 1. **CLI OAuth**: read `~/.codex/auth.json` (respect `CODEX_HOME`).
    → `GET https://chatgpt.com/backend-api/wham/usage` for the 5h and weekly windows, Resets and credits.
    → `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` for Banked Resets (status and expiry). Using one goes through the app-server below, never this endpoint (ADR 0014).
-2. **CLI app-server fallback**: `codex -s read-only -a never app-server`, JSON-RPC `account/rateLimits/read`. The process is short-lived and terminated after the call. The same process, with the Account's `CODEX_HOME`, runs `account/rateLimitResetCredit/consume` when the user confirms the Banked Resets line's reset button: once, or twice when a window the reset refills still has more than 20% left.
+2. **CLI app-server fallback**: `codex -s read-only -a never app-server`, JSON-RPC `account/rateLimits/read`, with the login's `CODEX_HOME` for an added folder. The process is short-lived and terminated after the call. The same process, with the Account's `CODEX_HOME`, runs `account/rateLimitResetCredit/consume` when the user confirms the Banked Resets line's reset button: once, or twice when a window the reset refills still has more than 20% left.
 3. **Browser cookie fallback** (opt-in): chatgpt.com session cookie → `/api/auth/session` access token → the `wham` endpoints. A session the browser has not refreshed (`error: RefreshAccessTokenError`) counts as expired.
 
 Displayed: 5h window, weekly window, model-specific windows if present, credits, Banked Resets.

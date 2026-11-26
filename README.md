@@ -90,14 +90,15 @@ and add `--zap` to also delete your history and settings.
 Tinybar uses the logins your official CLIs already store and calls the same endpoints they call for
 `/usage`. It never refreshes a token or sends a prompt. The exceptions: using a Codex banked reset when
 you confirm it in the popover, which goes through the Codex CLI ([ADR 0014](docs/adr/0014-using-codex-banked-resets.md)), and running
-`grok models` when a Grok login expires, so the Grok CLI renews it ([ADR 0015](docs/adr/0015-grok-renewed-through-its-cli.md)). When a login
-expires, the card turns stale until you run `claude`, `codex` or `agy` once, open Cursor, or run
+`grok models` when a Grok login expires, so the Grok CLI renews it ([ADR 0015](docs/adr/0015-grok-renewed-through-its-cli.md)). An expired Claude or Codex login
+is read through its own CLI, which renews it ([ADR 0016](docs/adr/0016-claude-renewed-through-its-cli.md)). When a login
+the CLI can't renew expires, the card turns stale until you run `claude`, `codex` or `agy` once, open Cursor, or run
 `opencode auth login`, `copilot login`, `gh auth login` or `grok`.
 [ADR 0001](docs/adr/0001-read-only-credentials.md) explains why.
 
 | Provider | Login | Limits from | Token history |
 | -------- | ----- | ----------- | ------------- |
-| Claude | `~/.claude/.credentials.json` or the `Claude Code-credentials` Keychain item | `api.anthropic.com/api/oauth/usage` | `~/.claude/projects` |
+| Claude | `~/.claude/.credentials.json` or the `Claude Code-credentials` Keychain item | `api.anthropic.com/api/oauth/usage`, else `claude`'s own `get_usage` | `~/.claude/projects` |
 | Codex | `~/.codex/auth.json` | `chatgpt.com/backend-api/wham/usage`, else a read-only `codex app-server` | `~/.codex/sessions`, `~/.codex/archived_sessions` |
 | Gemini | none | `agy -p /usage`, Antigravity CLI's own report | none |
 | Cursor | Cursor.app's `state.vscdb`, else your browser's `cursor.com` cookie | `cursor.com/api/usage-summary` | none |

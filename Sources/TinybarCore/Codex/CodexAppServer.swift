@@ -42,8 +42,8 @@ enum CodexAppServer {
         var title: String?
     }
 
-    static func fetch(timeout: TimeInterval = 15) async throws -> ProviderSnapshot {
-        try await snapshot(from: call("account/rateLimits/read", params: [:], home: nil, executable: locateCodex(), timeout: timeout))
+    static func fetch(home: URL? = nil, timeout: TimeInterval = 15) async throws -> ProviderSnapshot {
+        try await snapshot(from: call("account/rateLimits/read", params: [:], home: home, executable: locateCodex(), timeout: timeout))
     }
 
     private struct ConsumeResponse: Decodable {
@@ -123,18 +123,9 @@ enum CodexAppServer {
 
     // MARK: Process
 
-    /// Where package managers put CLIs; a GUI app's PATH has none of these.
-    private static let binDirectories = [
-        "/opt/homebrew/bin", "/usr/local/bin",
-        Paths.home.appendingPathComponent(".local/bin").path,
-        Paths.home.appendingPathComponent(".bun/bin").path,
-        Paths.home.appendingPathComponent(".volta/bin").path,
-        Paths.home.appendingPathComponent("bin").path,
-    ]
-
     static func locateCodex() -> String? {
         let fm = FileManager.default
-        let candidates = binDirectories.map { "\($0)/codex" } + [
+        let candidates = Paths.cliDirectories().map { "\($0)/codex" } + [
             "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
             "/Applications/Codex.app/Contents/Resources/codex",
         ]
@@ -150,7 +141,7 @@ enum CodexAppServer {
         process.arguments = ["-s", "read-only", "-a", "never", "app-server"]
         var env = ProcessInfo.processInfo.environment
         // GUI apps get a minimal PATH; the npm- or bun-installed CLI is a node script.
-        env["PATH"] = (binDirectories + ["/usr/bin", "/bin", env["PATH"] ?? ""]).joined(separator: ":")
+        env["PATH"] = (Paths.cliDirectories() + ["/usr/bin", "/bin", env["PATH"] ?? ""]).joined(separator: ":")
         if let home { env["CODEX_HOME"] = home.path }
         process.environment = env
         let stdin = Pipe(), stdout = Pipe()

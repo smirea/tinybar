@@ -27,10 +27,9 @@ public struct CodexProvider: UsageProvider {
     }
 
     public func fetch() async throws -> ProviderSnapshot {
-        if home != nil { return try await fetch(with: CodexCredentials.load(from: authFile), source: .cli) }
         var lastError: ProviderError
         do {
-            return try await fetch(with: CodexCredentials.load(), source: .cli)
+            return try await fetch(with: CodexCredentials.load(from: authFile), source: .cli)
         } catch let error as ProviderError {
             // Only a login problem is worth a fallback; rate limits and network errors would
             // hit the same backend again.
@@ -38,9 +37,11 @@ public struct CodexProvider: UsageProvider {
             lastError = error
         }
 
-        if CodexAppServer.locateCodex() != nil, let snapshot = try? await CodexAppServer.fetch() {
+        // The CLI renews its own login while answering, and later checks read the renewed one.
+        if CodexAppServer.locateCodex() != nil, let snapshot = try? await CodexAppServer.fetch(home: home) {
             return snapshot
         }
+        if home != nil { throw lastError }
 
         if allowBrowser(),
            let found = BrowserCookies.find(domain: "chatgpt.com", required: [ChatGPTWebSession.cookieName])

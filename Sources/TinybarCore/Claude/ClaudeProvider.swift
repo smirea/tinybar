@@ -25,10 +25,18 @@ public struct ClaudeProvider: UsageProvider {
     public func fetch() async throws -> ProviderSnapshot {
         do {
             let creds = try ClaudeCredentials.load(folder: folder)
-            // An expired token would just 401. Claude Code refreshes it on its next run.
-            guard !creds.isExpired else { throw ProviderError.loginExpired }
-            let usage = try await ClaudeUsageAPI.fetchUsage(accessToken: creds.accessToken, session: session)
-            return ClaudeUsageAPI.snapshot(from: usage, plan: creds.planName)
+            do {
+                guard !creds.isExpired else { throw ProviderError.loginExpired }
+                let usage = try await ClaudeUsageAPI.fetchUsage(accessToken: creds.accessToken, session: session)
+                return ClaudeUsageAPI.snapshot(from: usage, plan: creds.planName)
+            } catch ProviderError.loginExpired {
+                // Claude Code renews its own login while answering (ADR 0016); later checks then
+                // read the renewed token directly.
+                let usage = try await ClaudeCLIUsage.fetch(folder: folder)
+                var snapshot = ClaudeUsageAPI.snapshot(from: usage, plan: (try? ClaudeCredentials.load(folder: folder))?.planName ?? creds.planName)
+                snapshot.source = .cliProcess
+                return snapshot
+            }
         } catch let error as ProviderError {
             guard folder == nil, error == .loginExpired || error == .notConfigured, allowBrowser() else { throw error }
             guard let found = BrowserCookies.find(domain: "claude.ai", required: ["sessionKey"]),

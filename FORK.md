@@ -10,6 +10,8 @@ usage of other machines, read over SSH without copying their logs.
 
 The Codex card can also use a banked reset, through `codex app-server` ([ADR 0014](docs/adr/0014-using-codex-banked-resets.md)).
 An expired Grok login is renewed by running `grok models` ([ADR 0015](docs/adr/0015-grok-renewed-through-its-cli.md)).
+An expired Claude login is read through `claude`'s SDK mode, which renews it, as T3 Code does; Codex logins in other folders
+fall back to `codex app-server` with their `CODEX_HOME` ([ADR 0016](docs/adr/0016-claude-renewed-through-its-cli.md)).
 The overview defaults to Bars: a row per Limit Window with its pace notch, share left and signed Reserve as time
 (`ForkViews.swift`). Settings → Overview switches back to the upstream rings.
 

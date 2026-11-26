@@ -12,4 +12,5 @@ Where a Provider exposes no readable token, Tinybar runs the client itself for a
 - ADR 0014 lets the user use a Codex Banked Reset through the Codex CLI. Tinybar itself still sends nothing that changes state.
 - If staleness becomes a real problem, revisit it with a new ADR rather than quietly adding refresh logic.
 - ADR 0015 runs `grok models` when a Grok login has expired, so the Grok CLI renews its own six-hour login.
+- ADR 0016 reads an expired Claude login through `claude`'s SDK mode, so Claude Code renews its own eight-hour login.
 - claude-swap, if the user turns it on, can renew its own Accounts' logins when Tinybar asks it for their limits. That is the one case where Tinybar's polling can lead to a refresh (ADR 0010).

@@ -24,12 +24,19 @@ public enum Paths {
 
     /// Where a CLI is usually installed. GUI apps get a minimal PATH, so it can't be searched.
     static func locateCLI(_ name: String, home: URL = Paths.home) -> String? {
-        let candidates = [
-            home.appendingPathComponent(".local/bin/\(name)").path,
-            "/opt/homebrew/bin/\(name)",
-            "/usr/local/bin/\(name)",
+        cliDirectories(home: home).map { "\($0)/\(name)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// Where package managers and native installers put CLIs, in the order they're searched.
+    static func cliDirectories(home: URL = Paths.home) -> [String] {
+        [
+            home.appendingPathComponent(".local/bin").path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            home.appendingPathComponent(".bun/bin").path,
+            home.appendingPathComponent(".volta/bin").path,
+            home.appendingPathComponent("bin").path,
         ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     /// OpenCode's data directory: `XDG_DATA_HOME` if absolute, as OpenCode reads it, else `~/.local/share`.
