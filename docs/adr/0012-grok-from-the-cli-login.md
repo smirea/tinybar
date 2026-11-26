@@ -19,7 +19,7 @@ The rules come from reading all three clients and running the real CLI:
 
 - **Running `grok agent stdio` for `_x.ai/billing`**, as CodexBar does first, which keeps the token out of Tinybar and would also renew an old login. But the binary is 180 MB to start every 5 minutes, it makes four other requests as it starts, and a login being renewed by polling is what ADR 0001 rules out. Its method name has also moved: `x.ai/billing` answers "Method not found".
 - **grok.com's billing call with browser cookies**, which would serve people who only use grok.com. CodexBar has it, but it now needs a key held by the browser, so cookies alone can fail, and it adds cookie access for a route that's already breaking.
-- **Local session files** for token history (`~/.grok/sessions`). They hold token counts with no per-model split, so there's no Theoretical Cost to give. Left out, like Copilot's.
+- **Local session files** for token history (`~/.grok/sessions`). They hold token counts with no per-model split, so there's no Theoretical Cost to give. Left out, like Copilot's. ADR 0017 reads them after all: current CLIs split `turn_completed` usage by model and log what it cost.
 - **xAI's management API** for prepaid API balance. That's a different bill from the subscription, and needs a key the user would have to paste.
 - **Reset coupons** (`GetRemainingResets`): an undocumented grok.com call on top, for a display-only count.
 - **The `prepaidBalance`**: the app's Credits line has no currency, so a dollar balance would read as a count. Easy to add if someone asks.

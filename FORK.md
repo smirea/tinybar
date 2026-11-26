@@ -13,6 +13,8 @@ An expired Grok login is renewed by running `grok models` ([ADR 0015](docs/adr/0
 Claude and Codex limits come only through their CLIs, as T3 Code reads them: `claude` in SDK mode and `codex app-server`.
 The CLIs renew their own logins, so those cards don't go stale; the token reads, HTTP calls and browser fallback are gone
 ([ADR 0016](docs/adr/0016-limits-only-through-the-clis.md)).
+Grok's session updates and Antigravity's conversation databases count toward token history and Stats, read as T3 Code reads
+them (`Usage/ForkHistory.swift`, [ADR 0017](docs/adr/0017-grok-and-antigravity-token-history.md)).
 The overview defaults to Bars: a row per Limit Window with its pace notch, share left and signed Reserve as time
 (`ForkViews.swift`). Settings → Overview switches back to the upstream rings.
 

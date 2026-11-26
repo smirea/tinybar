@@ -68,10 +68,10 @@ and add `--zap` to also delete your history and settings.
   number becomes the average of what they have left, with a bar showing each one. Its page lists them all.
 - **Outages.** When Claude Code, Codex, Cursor, OpenCode Go, Copilot or grok.com report trouble on their status page, the ring gets
   an orange or red light, and the subscription's page links to the incident.
-- **Token history and cost.** Today, 7 days and 30 days from your Claude Code and Codex logs and
-  your OpenCode Go use, by model and project, priced at [models.dev](https://models.dev) API rates. Tinybar keeps daily totals
-  in a local database, so they survive Claude Code deleting transcripts after 30 days. Gemini,
-  Cursor, Copilot and Grok show limits only.
+- **Token history and cost.** Today, 7 days and 30 days from your Claude Code, Codex and Grok logs,
+  Antigravity's conversations and your OpenCode Go use, by model and project, priced at [models.dev](https://models.dev) API rates
+  (Grok at the cost its CLI logs). Tinybar keeps daily totals in a local database, so they survive Claude Code deleting
+  transcripts after 30 days. Cursor and Copilot show limits only.
 - **Stats.** A separate window with every token you used, agent hours, tool calls, lines added, the
   commands your agents run and the languages they write. **Plans** compares what each subscription
   gets you at API prices, measured from your limits and logs, and how its models score on
@@ -100,11 +100,11 @@ the CLI can't renew expires, the card turns stale until you run `claude`, `codex
 | -------- | ----- | ----------- | ------------- |
 | Claude | Claude Code's own (`claude` in SDK mode) | `claude`'s `get_usage` | `~/.claude/projects` |
 | Codex | the Codex CLI's own (`~/.codex/auth.json`) | a read-only `codex app-server` | `~/.codex/sessions`, `~/.codex/archived_sessions` |
-| Gemini | none | `agy -p /usage`, Antigravity CLI's own report | none |
+| Gemini | none | `agy -p /usage`, Antigravity CLI's own report | Antigravity's `conversations/*.db` |
 | Cursor | Cursor.app's `state.vscdb`, else your browser's `cursor.com` cookie | `cursor.com/api/usage-summary` | none |
 | OpenCode Go | OpenCode's `~/.local/share/opencode/opencode.db` or `auth.json` | `opencode.ai/zen/go/v1/usage` | `opencode.db`, Go subscription only |
 | Copilot | The Copilot CLI's user through `gh` or `~/.copilot/config.json`, or `~/.config/github-copilot` | `api.github.com/copilot_internal/user` | none |
-| Grok | `~/.grok/auth.json`, from `grok login` | `cli-chat-proxy.grok.com/v1/billing` and `/settings` | none |
+| Grok | `~/.grok/auth.json`, from `grok login` | `cli-chat-proxy.grok.com/v1/billing` and `/settings` | `~/.grok/sessions/**/updates.jsonl` |
 
 The only other requests carry no login. Prices come from `models.dev` once a day, and the latest
 release from GitHub every 6 hours and on Check now. The Claude, OpenAI, Cursor, OpenCode, GitHub and xAI status pages are checked with every poll.

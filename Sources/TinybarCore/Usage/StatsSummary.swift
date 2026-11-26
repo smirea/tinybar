@@ -200,9 +200,9 @@ public struct StatsSummary: Sendable {
         } else {
             first = min(allDays.first ?? today, today)
         }
-        // Only Providers with Activity: the page's figures explain each other, and a token count
-        // with no prompts or tools behind it would read as missing logs.
-        let allUsage = usage.filter { $0.day >= first && $0.day <= today && $0.provider.hasActivity }
+        // Every Provider's tokens and cost, so the card is the whole picture (ADR 0017); prompts,
+        // tool calls and the other Activity figures still come from Claude Code and Codex only.
+        let allUsage = usage.filter { $0.day >= first && $0.day <= today }
         let allStats = stats.filter { $0.day >= first && $0.day <= today }
         let usage = model.map { m in allUsage.filter { $0.model == m } } ?? allUsage
         let stats = model.map { m in allStats.filter { $0.model == m } } ?? allStats
@@ -346,7 +346,7 @@ public struct StatsSummary: Sendable {
         // Token totals outlive the logs; activity is counted from the logs on disk. Where they
         // differ, say how much was read rather than imply the agents were idle.
         var coverage: [ProviderID: Double] = [:]
-        for (provider, t) in byProvider where t > 0 {
+        for (provider, t) in byProvider where t > 0 && provider.hasActivity {
             let share = Double(counted[provider] ?? 0) / Double(t)
             if share < 0.97 { coverage[provider] = share }
         }

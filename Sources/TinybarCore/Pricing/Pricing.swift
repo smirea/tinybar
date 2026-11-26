@@ -66,6 +66,7 @@ public struct PriceTable: Sendable {
     public static let empty = PriceTable(prices: [:], fetchedAt: nil)
 
     public func price(provider: ProviderID, model: String) -> ModelPrice? {
+        if provider == .gemini { return antigravityPrice(model) }
         guard let table = prices[provider] else { return nil }
         let key = ModelName.normalize(model)
         if let exact = table[key] { return exact }
@@ -81,11 +82,11 @@ public struct PriceTable: Sendable {
     }
 
     public func cost(_ row: DailyUsage) -> Double? {
-        cost(provider: row.provider, model: row.model, tokens: row.tokens, long: row.long)
+        row.reportedCost ?? cost(provider: row.provider, model: row.model, tokens: row.tokens, long: row.long)
     }
 
     /// models.dev provider ids for each Provider.
-    static let sourceProviders: [ProviderID: String] = [.codex: "openai", .claude: "anthropic", .opencode: "opencode-go"]
+    static let sourceProviders: [ProviderID: String] = [.codex: "openai", .claude: "anthropic", .opencode: "opencode-go", .gemini: "google"]
 
     private static func rates(_ cost: [String: Any]) throws -> ModelPrice? {
         func number(_ key: String) throws -> Double? {
@@ -224,7 +225,10 @@ public actor PricingService {
         }
         if file.fetchedAt != nil, !prices.values.contains(where: { !$0.isEmpty }) { valid = false }
         lastAttempt = valid && file.format == 2 ? file.lastAttempt : nil
-        return PriceTable(prices: prices, fetchedAt: valid && file.format == 2 ? file.fetchedAt : nil)
+        // A cache from before a source was added is stale, so that source gets prices; a failed
+        // fetch is still not retried within the day.
+        let complete = PriceTable.sourceProviders.keys.allSatisfy { prices[$0] != nil }
+        return PriceTable(prices: prices, fetchedAt: valid && complete && file.format == 2 ? file.fetchedAt : nil)
     }
 
     private func saveCache(_ t: PriceTable) {
@@ -235,5 +239,19 @@ public actor PricingService {
         if let data = try? JSONEncoder().encode(file) {
             try? data.write(to: cacheURL, options: .atomic)
         }
+    }
+}
+
+extension PriceTable {
+    /// Antigravity runs Gemini, Claude and GPT models: each is priced from its maker's table. Its
+    /// names drop Google's `-preview` and add a thinking level, which shares the base model's price.
+    func antigravityPrice(_ model: String) -> ModelPrice? {
+        let base = ModelName.normalize(model).replacingOccurrences(of: #"-(low|medium|high|thinking)$"#, with: "", options: .regularExpression)
+        let maker: ProviderID = base.hasPrefix("claude-") ? .claude : base.hasPrefix("gpt-") ? .codex : .gemini
+        guard let table = prices[maker] else { return nil }
+        for candidate in [base, base + "-preview"] {
+            if let p = table[candidate] { return p }
+        }
+        return nil
     }
 }

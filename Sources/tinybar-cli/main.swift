@@ -5,6 +5,7 @@ import TinybarCore
 //   tinybar-cli limits [--swap] [--opted-in] [--provider=<id>]  fetch limits (optionally reading
 //                               claude-swap's accounts, or what Copilot only reads if turned on in Settings)
 //   tinybar-cli cookies         check which browser holds session cookies
+//   tinybar-cli history         read Grok's and Antigravity's history directly, by model
 //   tinybar-cli ingest [db]     ingest Codex logs into a store
 //   tinybar-cli usage [db]      print usage summaries
 
@@ -181,6 +182,7 @@ switch command {
 case "limits": await printLimits(swap: args.contains("--swap"), optedIn: args.contains("--opted-in"))
 case "cookies": printCookies()
 case "web": await printWeb()
+case "history": printHistory()
 case "ingest": try await ingest()
 case "usage": try await usage()
 case "stats": try await stats()
@@ -201,5 +203,13 @@ func printWeb() async {
         } catch {
             print("\(provider.displayName) web: \(error.localizedDescription)")
         }
+    }
+}
+
+// `tinybar-cli history`: what the Grok and Antigravity readers find, without a store.
+func printHistory() {
+    for (name, summary) in HistoryReaders.summaries() {
+        print(name)
+        for line in summary { print("  \(line)") }
     }
 }

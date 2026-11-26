@@ -11,6 +11,8 @@ public struct DailyUsage: Sendable, Hashable {
     public var tokens: TokenCounts
     /// The part of `tokens` from long requests, by Context Band, for Long-context Prices.
     public var long: [Int64: TokenCounts] = [:]
+    /// What the CLI itself priced these tokens at, where it logs that (Grok, ADR 0017).
+    public var reportedCost: Double?
 }
 
 /// Requests are filed by how far their context goes past these sizes, so Long-context Prices can
@@ -297,6 +299,7 @@ public actor UsageStore {
         }
         // A store from before OpenCode reads its history once in the child process first.
         if try hasCompletedOpenCodeImport() { total.recordsAdded += try ingestOpenCode() }
+        total.recordsAdded += (try? ingestForkHistory()) ?? 0
         try pruneClaudeMessagesDaily()
         return total
     }
@@ -851,7 +854,7 @@ public actor UsageStore {
     }
 
     /// A new response's tokens, in the daily totals and, if it was long, its Context Band.
-    private func addTokens(day: String, provider: ProviderID, model: String, project: String, machine: String, _ t: TokenCounts) throws {
+    func addTokens(day: String, provider: ProviderID, model: String, project: String, machine: String, _ t: TokenCounts) throws {
         try addDaily(day: day, provider: provider, model: model, project: project, machine: machine, t)
         if let band = ContextBand.of(t) {
             try addLong(day: day, provider: provider, model: model, project: project, machine: machine, band: band, t)
@@ -926,7 +929,7 @@ public actor UsageStore {
         {
             long[key(r), default: [:]][r[5].int] = TokenCounts(input: r[6].int, output: r[7].int, cacheWrite: r[8].int, cacheRead: r[9].int)
         }
-        return try db.run(sql, params).compactMap { r in
+        return try withReportedCosts(db.run(sql, params).compactMap { r in
             guard let provider = r[1].text.flatMap(ProviderID.init(rawValue:)) else { return nil }
             let key = key(r)
             return DailyUsage(
@@ -937,7 +940,7 @@ public actor UsageStore {
                 machine: key.machine,
                 tokens: TokenCounts(input: r[5].int, output: r[6].int, cacheWrite: r[7].int, cacheRead: r[8].int),
                 long: long[key] ?? [:])
-        }
+        }, since: since)
     }
 
     /// Activity counters with `day >= since`.
@@ -1026,9 +1029,9 @@ public actor UsageStore {
     }
 
     /// Every day with any tokens, oldest first: streaks span the whole history.
-    /// Days with any usage, or with usage of one model, of the Providers Stats covers.
+    /// Days with any usage, or with usage of one model, of any Provider (ADR 0017).
     public func activeDays(model: String? = nil) throws -> [String] {
-        let covered = "provider IN (" + ProviderID.allCases.filter(\.hasActivity).map { "'\($0.rawValue)'" }.joined(separator: ", ") + ")"
+        let covered = "1"
         if let model {
             return try db.run("SELECT DISTINCT day FROM daily_usage WHERE \(covered) AND model = ? ORDER BY day", [.text(model)])
                 .compactMap { $0.first?.text }

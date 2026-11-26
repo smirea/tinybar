@@ -775,19 +775,19 @@ private func openCodeStatus(go: String, reason: String = "none", free: String = 
     #expect(abs(cost - 0.002948) < 1e-9)
 }
 
-@Test func statsLeavesOutProvidersWithoutActivity() {
+@Test func statsCountsTheTokensOfProvidersWithoutActivity() {
     let day = DayKey.string(for: Date())
     func row(_ provider: ProviderID, _ tokens: Int64) -> DailyUsage {
         DailyUsage(day: day, provider: provider, model: "m", project: "", tokens: TokenCounts(input: tokens))
     }
     let summary = StatsSummary.build(
         usage: [row(.claude, 10), row(.opencode, 1000)], stats: [], allDays: [day], range: .week, prices: .empty)
-    #expect(summary.tokens == 10)
-    #expect(summary.tokensByProvider[.opencode] == nil)
+    #expect(summary.tokens == 1010)
+    #expect(summary.tokensByProvider[.opencode] == 1000)
     #expect(summary.activityCoverage[.opencode] == nil)
 }
 
-@Test func statsDaysLeaveOutProvidersWithoutActivity() async throws {
+@Test func statsDaysIncludeProvidersWithoutActivity() async throws {
     let fixture = try Fixture()
     defer { fixture.remove() }
     try fixture.setUp(Fixture.v1Tables)
@@ -795,8 +795,8 @@ private func openCodeStatus(go: String, reason: String = "none", free: String = 
     let store = try fixture.store()
     try await store.ingestOpenCode(database: fixture.database)
     #expect(try await totals(store).count == 1)
-    #expect(try await store.activeDays().isEmpty)
-    #expect(try await store.activeDays(model: "glm-5.2").isEmpty)
+    #expect(try await store.activeDays().count == 1)
+    #expect(try await store.activeDays(model: "glm-5.2").count == 1)
 }
 
 @Test func openCodeSubscriptionIsAProvider() {

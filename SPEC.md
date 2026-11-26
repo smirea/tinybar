@@ -15,7 +15,7 @@ Vocabulary: see [CONTEXT.md](./CONTEXT.md). Decisions: [docs/adr/](./docs/adr), 
 
 **Non-goals (v1)**
 - Providers other than Claude, Codex, Gemini, Cursor, OpenCode Go, Copilot and Grok. Kimi comes later.
-- Token history for Gemini and Cursor (neither keeps usable local logs; limits only).
+- Token history for Cursor (no usable local logs; limits only).
 - Refreshing tokens or writing to CLI credential files (ADR 0001).
 - Token usage from web/desktop chat apps (no local logs).
 - Historical pricing.
@@ -97,7 +97,7 @@ Enabled automatically with a CLI user whose token is in its file or held by `gh`
    → `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`, and `/v1/settings` for the plan's name, as the CLI does, with `Authorization: Bearer` and `X-XAI-Token-Auth: xai-grok-cli`. A login is sent only to that host or this Mac.
 
 Displayed: plan (`subscription_tier_display`), and one window, as Chat, Build and the rest are shares of one pool: `creditUsagePercent` over `currentPeriod`, else over `billingPeriodStart` and `billingPeriodEnd`. Weekly or Monthly from the period's type, else its length, and Credits for any other period. A left-out percentage is 0 within a whole `currentPeriod` typed weekly or monthly, since proto3 omits zeros. `onDemandUsed` out of `onDemandCap` (US cents) as "Extra usage" when either isn't zero. A team account that's turned away, a report with no percentage to read, and a period that has already ended say so.
-Enabled automatically with a usable login. Limit Alerts for the weekly window only. No token history (ADR 0012).
+Enabled automatically with a usable login. Limit Alerts for the weekly window only. Token history from the CLI's session updates (§9, ADR 0017).
 
 ### Detection and staleness
 - On launch, a Provider is enabled automatically if its CLI credentials exist. It can be toggled in Settings.
@@ -222,6 +222,8 @@ view, so switching never resizes anything. Only the page in view is built, and t
 - **Codex**: `~/.codex/sessions/**` (and archived sessions). Token counts are cumulative per session, so store deltas and handle forked sessions without double counting.
 - **Every Account together**: the same logs of each extra login folder, added ones included, and of `cswap run` profiles (`~/.claude-swap-backup/sessions/*/projects`), where those folders exist, looked for on each ingest. These are read whether or not the Account is toggled on or claude-swap is turned on, because they are only local logs. Folders that resolve to the same place count once. Token history stays per Provider: after `cswap switch`, nothing in a log says which Account made a request.
 
+- **Grok** (ADR 0017): `turn_completed` updates in `$GROK_HOME/sessions/<cwd>/<session>/updates.jsonl`, read by byte offset like the logs above. One record per model in `modelUsage`; `inputTokens` includes the cached tokens. Priced at the CLI's own `costUsdTicks`, since models.dev doesn't list the CLI's models. A response is its session, prompt id and model.
+- **Gemini** (ADR 0017): Antigravity's conversation databases (`conversations/*.db` under `~/.gemini/antigravity`, `-cli`, `-ide`, `-backup`, `~/.config/antigravity`, or `ANTIGRAVITY_DATA_DIR`, and T3 Code's Antigravity profiles), read in place, as immutable when no WAL is beside them, whenever the database or its WAL changes. Usage from the protobuf metadata of `steps` and `gen_metadata` rows, as T3 Code reads it; model numbers are named from the same database's generation rows. A call is known by its ids, and a fuller later copy adds only the difference. The project is the conversation's workspace. Gemini, Claude and GPT models are priced from Google's, Anthropic's and OpenAI's models.dev tables.
 - **OpenCode**: `opencode.db`, as a copy of the database and its WAL (a clone on APFS). Finished `message` rows (1.x) and `session_message` rows (2.x, assistant and compaction) whose provider is `opencode-go`; everything else is left out (ADR 0009). `output` plus `reasoning` counts as output. Forks and the upgrade to 2.x copy rows under new ids, so a response is identified by its time, model and tokens. Each read starts 10 minutes before the newest row seen, never counted past now, and is skipped while the database and WAL are unchanged. No Activity.
 
 Parsing rules must be verified against CodexBar's `Sources/CodexBarCore/Vendored/CostUsage/` before implementing.
@@ -286,7 +288,7 @@ Parsing rules must be verified against CodexBar's `Sources/CodexBarCore/Vendored
 
 ## 12. Later (explicitly deferred)
 
-Kimi provider; token history for other CLIs; OpenCode usage routed to other subscriptions; Activity for OpenCode; a second Account for Cursor, Gemini, OpenCode Go, Copilot and Grok; token history for Copilot and Grok; Copilot budgets from github.com; Grok's shares per product, prepaid balance and reset coupons; token refresh (would need a new ADR); historical pricing; Activity for Gemini and Cursor (no local logs).
+Kimi provider; token history for other CLIs; OpenCode usage routed to other subscriptions; Activity for OpenCode; a second Account for Cursor, Gemini, OpenCode Go, Copilot and Grok; token history for Copilot; Copilot budgets from github.com; Grok's shares per product, prepaid balance and reset coupons; token refresh (would need a new ADR); historical pricing; Activity for Gemini and Cursor (no local logs).
 
 ## 13. Stats window
 
