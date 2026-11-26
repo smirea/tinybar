@@ -10,6 +10,8 @@ usage of other machines, read over SSH without copying their logs.
 
 The Codex card can also use a banked reset, through `codex app-server` ([ADR 0014](docs/adr/0014-using-codex-banked-resets.md)).
 An expired Grok login is renewed by running `grok models` ([ADR 0015](docs/adr/0015-grok-renewed-through-its-cli.md)).
+The overview defaults to Bars: a row per Limit Window with its pace notch, share left and signed Reserve as time
+(`ForkViews.swift`). Settings → Overview switches back to the upstream rings.
 
 `Scripts/install-fork.sh` builds, signs with the local Apple Development identity and replaces `/Applications/Tinybar.app`.
 `fork-sync` (in `~/code/scripts`) rebases `main` onto `upstream/main` every day at noon, pushes, and reinstalls.
