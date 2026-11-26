@@ -274,7 +274,7 @@ Parsing rules must be verified against CodexBar's `Sources/CodexBarCore/Vendored
 
 - Public GitHub repo `ThiloReintjes/tinybar`, MIT license.
 - Pushing a `v*` tag publishes a GitHub Release with a zipped app and bumps the cask in the
-  `ThiloReintjes/homebrew-tinybar` tap. `Scripts/install.sh` installs it and opens it.
+  `ThiloReintjes/homebrew-tinybar` tap. `Scripts/install.sh` builds the app from source, signs it with the local Apple Development identity and puts it in `/Applications`.
 - Releases are signed with Developer ID and notarized, so Gatekeeper opens them without asking.
   The release workflow stops if signing or notarization fails, after retrying Apple's ticket server, which sometimes drops the connection. CI and release runs that GitHub gave no runner are re-run, up to four tries, and any re-run uses `macos-15-intel`, which has the same Xcode as `macos-15`. Next: the official cask
   (`brew install --cask tinybar`).

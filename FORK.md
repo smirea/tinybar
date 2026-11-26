@@ -13,6 +13,6 @@ An expired Grok login is renewed by running `grok models` ([ADR 0015](docs/adr/0
 The overview defaults to Bars: a row per Limit Window with its pace notch, share left and signed Reserve as time
 (`ForkViews.swift`). Settings → Overview switches back to the upstream rings.
 
-`Scripts/install-fork.sh` builds, signs with the local Apple Development identity and replaces `/Applications/Tinybar.app`.
+`Scripts/install.sh` builds, signs with the local Apple Development identity and replaces `/Applications/Tinybar.app`.
 `fork-sync` (in `~/code/scripts`) rebases `main` onto `upstream/main` every day at noon, pushes, and reinstalls.
 Don't install the Homebrew cask alongside it: its updater would put the upstream app back.
