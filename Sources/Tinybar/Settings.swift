@@ -34,6 +34,10 @@ final class Settings {
         didSet { if savesChanges { defaults.set(Array(hiddenBars).sorted(), forKey: "hiddenBars") } }
     }
 
+    var barsShowPercent: Bool {
+        didSet { if savesChanges { defaults.set(barsShowPercent, forKey: "barsShowPercent") } }
+    }
+
     var notificationsEnabled: Bool {
         didSet { defaults.set(notificationsEnabled, forKey: "notificationsEnabled") }
     }
@@ -73,6 +77,7 @@ final class Settings {
         pinnedLimit = defaults.string(forKey: "pinnedLimit")
         hidePercentage = defaults.bool(forKey: "hidePercentage")
         showsUsedPercentage = defaults.bool(forKey: "showsUsedPercentage")
+        barsShowPercent = defaults.object(forKey: "barsShowPercent") as? Bool ?? true
         hiddenBars = Set(defaults.stringArray(forKey: "hiddenBars") ?? [])
         overviewStyle = defaults.string(forKey: "overviewStyle").flatMap(OverviewStyle.init) ?? .bars
         notificationsEnabled = defaults.bool(forKey: "notificationsEnabled")

@@ -109,7 +109,7 @@ struct OverviewBarsRow: View {
             if let snapshot, !snapshot.windows.isEmpty {
                 Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 5) {
                     ForEach(snapshot.windows.filter { model.settings.showsBar(id, $0) }) { window in
-                        BarsWindowRow(window: window, provider: id, asOf: asOf)
+                        BarsWindowRow(window: window, provider: id, asOf: asOf, showsPercent: model.settings.barsShowPercent)
                     }
                 }
                 .opacity(stale ? 0.55 : 1)
@@ -136,6 +136,7 @@ private struct BarsWindowRow: View {
     let provider: ProviderID
     /// When the window's usage was read. nil while Stale: the pace is out of date.
     let asOf: Date?
+    let showsPercent: Bool
     @Environment(\.showsUsed) private var showsUsed
 
     var body: some View {
@@ -146,20 +147,22 @@ private struct BarsWindowRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(width: 78, alignment: .leading)
-            RemainingBar(
+            PaceBar(
                 fraction: window.remainingPercent / 100, provider: provider,
                 evenPace: asOf.flatMap { window.elapsedShare(asOf: $0) }.map { 1 - $0 })
-            Text("\(Int(shownPercent(left: window.remainingPercent, used: showsUsed).rounded()))%")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(PercentText.color(window.remainingPercent))
-                .frame(width: 34, alignment: .trailing)
-            Text(reserve.map(Self.delta) ?? "—")
-                .font(.system(size: 11))
-                .foregroundStyle(reserve.map { $0 < 0 } == true ? AnyShapeStyle(Self.overPace)
-                    : reserve == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+            if showsPercent {
+                Text("\(Int(shownPercent(left: window.remainingPercent, used: showsUsed).rounded()))%")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(PercentText.color(window.remainingPercent))
+                    .frame(width: 34, alignment: .trailing)
+            }
+            delta(reserve)
+                .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .fixedSize()
-                .frame(width: 32, alignment: .trailing)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .frame(width: 40, alignment: .trailing)
         }
         .monospacedDigit()
         .accessibilityElement(children: .ignore)
@@ -167,8 +170,19 @@ private struct BarsWindowRow: View {
         .accessibilityValue(reserve.map { $0 < 0 ? "\(Self.span(-$0)) over an even pace" : "\(Self.span($0)) to spare" } ?? "")
     }
 
-    /// Brighter than the system red, which reads as dim at this size on the dark popover.
-    private static let overPace = Color(red: 1, green: 0.32, blue: 0.32)
+    /// Over an even pace: white on a red tag, so it stands out from the rows that are fine.
+    @ViewBuilder
+    private func delta(_ reserve: TimeInterval?) -> some View {
+        if let reserve, reserve < 0 {
+            Text(Self.delta(reserve))
+                .foregroundStyle(.white)
+                .background(Color(red: 0.92, green: 0.2, blue: 0.2), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        } else if let reserve {
+            Text(Self.delta(reserve))
+        } else {
+            Text("—").foregroundStyle(.tertiary)
+        }
+    }
 
     /// "+2d" under an even pace, "−3h" over it: only the largest unit.
     static func delta(_ seconds: TimeInterval) -> String {
@@ -180,6 +194,48 @@ private struct BarsWindowRow: View {
         if s >= 86400 { return "\(s / 86400)d" }
         if s >= 3600 { return "\(s / 3600)h" }
         return "\(s / 60)m"
+    }
+}
+
+/// The share left, with the even pace as a line taller than the bar and a gap cut around it, so it
+/// shows on the fill, on the empty track and at either end alike.
+private struct PaceBar: View {
+    let fraction: Double
+    let provider: ProviderID
+    var evenPace: Double?
+    @Environment(\.showsUsed) private var showsUsed
+
+    var body: some View {
+        GeometryReader { geo in
+            let f = shown(fraction)
+            let x = evenPace.map { min(max(geo.size.width * shown($0), 1), geo.size.width - 1) }
+            ZStack(alignment: .leading) {
+                ZStack(alignment: .leading) {
+                    Capsule().fill(provider.color.opacity(0.18))
+                    Capsule()
+                        .fill(provider.barFill)
+                        .mask(alignment: .leading) {
+                            Capsule().frame(width: f > 0 ? max(6, geo.size.width * f) : 0)
+                        }
+                    if let x {
+                        Rectangle().frame(width: 4).offset(x: x - 2).blendMode(.destinationOut)
+                    }
+                }
+                .frame(height: 6)
+                .compositingGroup()
+                if let x {
+                    Capsule().fill(.primary).frame(width: 2, height: 12).offset(x: x - 1)
+                }
+            }
+            .frame(height: geo.size.height)
+        }
+        .frame(height: 12)
+        .animation(.smooth(duration: 0.5), value: fraction)
+        .animation(.smooth(duration: 0.5), value: evenPace)
+    }
+
+    private func shown(_ left: Double) -> Double {
+        shownPercent(left: min(max(left, 0), 1) * 100, used: showsUsed) / 100
     }
 }
 
@@ -242,22 +298,20 @@ struct OverviewBarsSection: View {
 
     var body: some View {
         let rows = model.enabledProviders.flatMap { id in
-            (model.providers[id]?.snapshot?.windows ?? []).map { (id: id, window: $0) }
+            (model.providers[id]?.snapshot?.windows ?? []).map { (key: "\(id.rawValue).\($0.id)", id: id, window: $0) }
         }
-        if !rows.isEmpty {
-            SettingsSection("Overview bars", footer: "Turn off the limits you don't need to see at a glance. Their provider pages still show them.") {
-                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    SettingsToggle(
-                        isOn: Binding(
-                            get: { model.settings.showsBar(row.id, row.window) },
-                            set: { model.settings.setBar(row.id, row.window, shown: $0) }),
-                        first: index == 0)
-                    {
-                        HStack(spacing: 8) {
-                            ProviderDot(id: row.id, size: 7)
-                            Text(row.id.displayName).foregroundStyle(.secondary)
-                            Text(row.window.title)
-                        }
+        @Bindable var settings = model.settings
+        SettingsSection("Overview bars", footer: "Turn off the limits you don't need to see at a glance. Their provider pages still show them.") {
+            SettingsToggle(isOn: $settings.barsShowPercent, first: true) { Text("Show percentages") }
+            ForEach(rows, id: \.key) { row in
+                SettingsToggle(isOn: Binding(
+                    get: { model.settings.showsBar(row.id, row.window) },
+                    set: { model.settings.setBar(row.id, row.window, shown: $0) }))
+                {
+                    HStack(spacing: 8) {
+                        ProviderDot(id: row.id, size: 7)
+                        Text(row.id.displayName).foregroundStyle(.secondary)
+                        Text(row.window.title)
                     }
                 }
             }
