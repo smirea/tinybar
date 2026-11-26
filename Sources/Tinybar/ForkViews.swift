@@ -160,9 +160,7 @@ private struct BarsWindowRow: View {
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1)
-                .frame(width: 40, alignment: .trailing)
+                .frame(width: 44, alignment: .trailing)
         }
         .monospacedDigit()
         .accessibilityElement(children: .ignore)
@@ -170,13 +168,19 @@ private struct BarsWindowRow: View {
         .accessibilityValue(reserve.map { $0 < 0 ? "\(Self.span(-$0)) over an even pace" : "\(Self.span($0)) to spare" } ?? "")
     }
 
-    /// Over an even pace: white on a red tag, so it stands out from the rows that are fine.
+    /// Over an even pace: a tag that stands out from the rows that are fine, red when a day or more
+    /// over and yellow when less.
     @ViewBuilder
     private func delta(_ reserve: TimeInterval?) -> some View {
         if let reserve, reserve < 0 {
+            let days = -reserve >= 86400
             Text(Self.delta(reserve))
-                .foregroundStyle(.white)
-                .background(Color(red: 0.92, green: 0.2, blue: 0.2), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .foregroundStyle(days ? Color.white : Color.black.opacity(0.85))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(
+                    days ? Color(red: 0.92, green: 0.2, blue: 0.2) : Color(red: 0.98, green: 0.78, blue: 0.18),
+                    in: RoundedRectangle(cornerRadius: 4, style: .continuous))
         } else if let reserve {
             Text(Self.delta(reserve))
         } else {
