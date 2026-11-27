@@ -52,7 +52,7 @@ struct ForkNote: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Color.accentColor)
             }
-            Text("Also counts the Claude Code and Codex usage of \(RemoteHosts.all.joined(separator: ", ")), read over SSH. Rebased onto upstream and reinstalled daily at noon by fork-sync.")
+            Text("Also counts the Claude Code, Codex, Grok and Antigravity usage of \(RemoteHosts.all.joined(separator: ", ")), read over SSH. Rebased onto upstream and reinstalled daily at noon by fork-sync.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

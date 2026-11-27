@@ -1,7 +1,8 @@
 import Foundation
 import os
 
-/// Reads the Claude Code and Codex logs of `RemoteHosts` over SSH, without copying them. A remote log's
+/// Reads the Claude Code, Codex and Grok logs of `RemoteHosts` over SSH, without copying them, and
+/// snapshots their Antigravity databases, which can't be read that way. A remote log's
 /// path is `/@<host>/<path in the remote home>`, so its cursor never meets a local one.
 enum RemoteLogs {
     static let prefix = "/@"
@@ -90,6 +91,85 @@ enum RemoteLogs {
 
         func cancel() {
             if process.isRunning { process.terminate() }
+        }
+    }
+
+    /// The Grok CLI's sessions folder on each host, read like its Claude Code logs.
+    static func grokRoots() -> [(root: String, machine: String)] {
+        RemoteHosts.all.map { ("\(prefix)\($0)/.grok/sessions", $0) }
+    }
+
+    struct RemoteDatabase {
+        var path: String
+        var stamp: UsageStore.FileStamp
+        var wal: UsageStore.FileStamp?
+    }
+
+    /// Antigravity's conversation databases on `host`, found in the folders
+    /// `AntigravityHistory.conversationRoots` searches here. Nil when the host doesn't answer.
+    static func antigravityDatabases(_ host: String) -> [RemoteDatabase]? {
+        guard isUp(host) else { return nil }
+        let roots = ["antigravity", "antigravity-cli", "antigravity-ide", "antigravity-backup"].map { ".gemini/\($0)" }
+            + [".config/antigravity", ".t3/userdata/providers/antigravity/*/antigravity-acp"]
+        let command = """
+        for r in \(roots.joined(separator: " ")); do [ -d "$r/conversations" ] && r="$r/conversations"; [ -d "$r" ] && \
+        find -H "$r" -mindepth 1 -name '.*' -prune -o -type f \\( -name '*.db' -o -name '*.db-wal' \\) -exec stat -f '%i %z %Fm %N' {} +; \
+        done 2>/dev/null; exit 0
+        """
+        guard let output = output(host, command) else {
+            downUntil.withLock { $0[host] = Date().addingTimeInterval(retryAfter) }
+            return nil
+        }
+        var databases: [String: UsageStore.FileStamp] = [:], wals: [String: UsageStore.FileStamp] = [:]
+        var inodes = Set<Int64>()
+        for line in output.split(separator: "\n") {
+            let fields = line.split(separator: " ", maxSplits: 3)
+            guard fields.count == 4, let inode = Int64(fields[0]), let size = Int64(fields[1]), let seconds = Double(fields[2]) else { continue }
+            let path = String(fields[3]), stamp = UsageStore.FileStamp(inode: inode, size: size, mtime: Int64(seconds * 1000))
+            if path.hasSuffix(".db-wal") {
+                wals[String(path.dropLast(4))] = stamp
+            } else if inodes.insert(inode).inserted {
+                // One database reached through two roots, as a linked profile folder gives it.
+                databases[path] = stamp
+            }
+        }
+        return databases.sorted { $0.key < $1.key }.map { RemoteDatabase(path: "\(prefix)\(host)/\($0.key)", stamp: $0.value, wal: wals[$0.key]) }
+    }
+
+    /// Copies a database on its host to `local` as one consistent snapshot. `sqlite3 .backup` takes it
+    /// there, so a write during the copy can't tear it, and it travels compressed: these shrink about
+    /// sixfold. The source is opened read-only, so Antigravity's own files are never written.
+    static func copyDatabase(_ path: String, to local: URL) throws {
+        guard let (host, file) = split(path) else { throw Failed(description: "\(path) isn't remote") }
+        // Without a WAL beside it, a WAL-mode database only opens read-only as immutable.
+        let command = """
+        f=\(quote(file)); if [ -e "$f-wal" ]; then m=mode=ro; else m=immutable=1; fi; \
+        t=$(mktemp -t tinybar) || exit 1; sqlite3 "file:$f?$m" ".backup '$t'" && gzip -1 -c "$t"; s=$?; rm -f "$t"; exit $s
+        """
+        let ssh = ssh(host, command), gunzip = Process()
+        gunzip.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
+        gunzip.arguments = ["-c"]
+        let pipe = Pipe()
+        ssh.standardOutput = pipe
+        gunzip.standardInput = pipe
+        guard FileManager.default.createFile(atPath: local.path, contents: nil), let out = FileHandle(forWritingAtPath: local.path) else {
+            throw Failed(description: "can't write \(local.path)")
+        }
+        defer { try? out.close() }
+        gunzip.standardOutput = out
+        gunzip.standardError = FileHandle.nullDevice
+        try gunzip.run()
+        do { try ssh.run() } catch {
+            gunzip.terminate()
+            throw error
+        }
+        let watchdog = DispatchWorkItem { if ssh.isRunning { ssh.terminate() } }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 300, execute: watchdog)
+        defer { watchdog.cancel() }
+        ssh.waitUntilExit()
+        gunzip.waitUntilExit()
+        guard ssh.terminationStatus == 0, gunzip.terminationStatus == 0 else {
+            throw Failed(description: "copying \(path) failed: ssh \(ssh.terminationStatus), gunzip \(gunzip.terminationStatus)")
         }
     }
 

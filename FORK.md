@@ -1,11 +1,13 @@
 # Fork
 
-This fork of [ThiloReintjes/tinybar](https://github.com/ThiloReintjes/tinybar) also counts the Claude Code and Codex
-usage of other machines, read over SSH without copying their logs.
+This fork of [ThiloReintjes/tinybar](https://github.com/ThiloReintjes/tinybar) also counts the Claude Code, Codex, Grok and
+Antigravity usage of other machines, read over SSH.
 
 - Hosts are in `Sources/TinybarCore/Usage/RemoteHosts.swift`: names from `~/.ssh/config` that connect without a prompt.
 - `RemoteLogs.swift` lists and streams `~/.claude/projects` and `~/.codex/{sessions,archived_sessions}` on each host.
   Their cursors use paths like `/@mini/.claude/projects/…`. A host that is offline is skipped and caught up later.
+- It also streams `~/.grok/sessions` and copies each changed Antigravity database as a compressed `sqlite3 .backup`
+  snapshot, read here and deleted ([ADR 0017](docs/adr/0017-grok-and-antigravity-token-history.md)).
 - The rest of the diff is a few hooks in `UsageStore.swift`, kept small so the daily rebase stays clean.
 
 The Codex card can also use a banked reset, through `codex app-server` ([ADR 0014](docs/adr/0014-using-codex-banked-resets.md)).

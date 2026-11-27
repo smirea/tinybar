@@ -13,25 +13,43 @@ private let turn = #"{"timestamp":1794060510,"method":"_x.ai/session/update","pa
     #expect(r.cost == 3)
 }
 
+/// A Grok sessions folder holding `turn` once, under `name` in a temporary folder.
+private func grokSessions(_ root: URL, _ name: String) throws -> String {
+    let session = root.appendingPathComponent("\(name)/%2Frepo/s1", isDirectory: true)
+    try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+    try Data((turn + "\n").utf8).write(to: session.appendingPathComponent("updates.jsonl"))
+    return root.appendingPathComponent(name).path
+}
+
 @Test func aGrokTurnReadAgainCountsOnceAndKeepsTheCLIsCost() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let session = root.appendingPathComponent("sessions/%2Frepo/s1", isDirectory: true)
-    try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
-    let file = session.appendingPathComponent("updates.jsonl")
-    try Data((turn + "\n").utf8).write(to: file)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let store = try UsageStore(path: root.appendingPathComponent("usage.sqlite"))
-    let sessions = root.appendingPathComponent("sessions")
+    let here = try grokSessions(root, "sessions")
 
-    #expect(try await store.ingestForkHistory(grokRoot: sessions, antigravityRoots: []) == 1)
-    // The same turn in a second file, as a copied session leaves it, is the same response.
-    let copy = root.appendingPathComponent("sessions/%2Frepo/s1-copy", isDirectory: true)
-    try FileManager.default.createDirectory(at: copy, withIntermediateDirectories: true)
-    try Data((turn + "\n").utf8).write(to: copy.appendingPathComponent("updates.jsonl"))
-    #expect(try await store.ingestForkHistory(grokRoot: sessions, antigravityRoots: []) == 0)
+    #expect(try await store.ingestForkHistory(grokRoots: [(here, RemoteHosts.thisMac)], antigravityRoots: [], antigravityHosts: []) == 1)
+    // The same turn copied to another machine is the same response, and stays with the first.
+    let there = try grokSessions(root, "mini-sessions")
+    #expect(try await store.ingestForkHistory(
+        grokRoots: [(here, RemoteHosts.thisMac), (there, "mini")], antigravityRoots: [], antigravityHosts: []) == 0)
 
     let rows = try await store.daily(since: "2000-01-01", provider: .grok)
     #expect(rows.map(\.tokens.total) == [1300])
+    #expect(rows.map(\.machine) == [RemoteHosts.thisMac])
+    #expect(rows.first.flatMap(PriceTable.empty.cost) == 3)
+}
+
+@Test func aGrokTurnFromAnotherMachineCountsUnderItWithTheCLIsCost() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = try UsageStore(path: root.appendingPathComponent("usage.sqlite"))
+    let there = try grokSessions(root, "sessions")
+
+    #expect(try await store.ingestForkHistory(grokRoots: [(there, "mini")], antigravityRoots: [], antigravityHosts: []) == 1)
+    let rows = try await store.daily(since: "2000-01-01", provider: .grok)
+    #expect(rows.map(\.machine) == ["mini"])
     #expect(rows.first.flatMap(PriceTable.empty.cost) == 3)
 }
 

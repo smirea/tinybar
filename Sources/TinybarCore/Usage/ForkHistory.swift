@@ -160,7 +160,14 @@ enum AntigravityHistory {
         guard sqlite3_exec(handle, "BEGIN", nil, nil, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_exec(handle, "COMMIT", nil, nil, nil) }
         let hasSteps = SQLiteDB.hasTable("steps", in: handle), hasGenerations = SQLiteDB.hasTable("gen_metadata", in: handle)
-        guard hasSteps || hasGenerations else { return nil }
+        guard hasSteps || hasGenerations else {
+            // A conversation opened and never written has no tables yet; one with others has changed shape.
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(handle, "SELECT count(*) FROM sqlite_master", -1, &stmt, nil) == SQLITE_OK,
+                  sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_int64(stmt, 0) == 0 else { return nil }
+            return []
+        }
 
         var trajectory: Date?
         var workspace: String?

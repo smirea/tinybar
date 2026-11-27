@@ -12,16 +12,16 @@ struct CountingNotes: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             note("Limits", """
-                Each provider reports your limits using the login its CLI already has, or your \
-                browser session if you turned that on in Settings. Tinybar only reads those logins \
-                and never changes them. A run-out time assumes you keep the average pace of the \
+                Each provider reports your limits using the login its CLI already has. Tinybar never \
+                writes those logins; for Claude and Codex the CLI itself renews one that expired. A run-out time assumes you keep the average pace of the \
                 window so far. With several accounts, a provider's number is the plain average of \
                 what each has left, and each account's own limits are on its page.
                 """)
             note("Tokens", """
-                Counted from the Claude Code and Codex logs and OpenCode's database on this Mac, and \
-                kept as daily totals, so they stay when old logs are deleted. Of OpenCode, only use \
-                of its Go subscription counts. Gemini and Cursor show limits only.
+                Counted from the Claude Code, Codex and Grok logs, Antigravity's conversations and \
+                OpenCode's database, on this Mac and the machines read over SSH, and kept as daily \
+                totals, so they stay when old logs are deleted. Of OpenCode, only use of its Go \
+                subscription counts. Cursor shows limits only.
                 """)
             note("At API prices", """
                 What those tokens would cost on each provider's pay-as-you-go API, at today's prices \

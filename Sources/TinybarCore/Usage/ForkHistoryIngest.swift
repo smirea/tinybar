@@ -25,34 +25,37 @@ extension UsageStore {
     CREATE TABLE IF NOT EXISTS fork_key (key TEXT PRIMARY KEY, record INTEGER NOT NULL) WITHOUT ROWID;
     """
 
-    /// Reads what changed since the last call. A file that can't be read is left for the next one
-    /// and doesn't stop the others. Returns the responses added.
+    /// Reads what changed since the last call, here and on `RemoteHosts`. A file that can't be read is
+    /// left for the next one and doesn't stop the others. Returns the responses added.
     @discardableResult
     func ingestForkHistory(
-        grokRoot: URL = GrokHistory.sessionsRoot(),
-        antigravityRoots: [URL] = AntigravityHistory.conversationRoots()) throws -> Int
+        grokRoots: [(root: String, machine: String)] = [(GrokHistory.sessionsRoot().path, RemoteHosts.thisMac)] + RemoteLogs.grokRoots(),
+        antigravityRoots: [URL] = AntigravityHistory.conversationRoots(),
+        antigravityHosts: [String] = RemoteHosts.all) throws -> Int
     {
-        try db.exec(Self.forkHistorySchema)
+        try migrateForkHistory()
         var added = 0
-        var grokFiles: [(String, FileStamp)] = []
-        try Self.walkJSONL(grokRoot.path) { path, stamp in
-            if path.hasSuffix("/" + GrokHistory.fileName) { grokFiles.append((path, stamp)) }
-        }
-        for (path, stamp) in grokFiles {
-            let known = try forkCursor(path)
-            let key = Self.stampKey(stamp, nil)
-            guard known?.stamp != key else { continue }
-            // A file that shrank or was replaced is read again from the start; responses count once anyway.
-            let from = known.map { $0.stamp.hasPrefix("\(stamp.inode):") && $0.offset <= stamp.size ? $0.offset : 0 } ?? 0
-            var records: [HistoryRecord] = []
-            let cwd = GrokHistory.cwd(ofFile: path, root: grokRoot.path)
-            guard let end = try? JSONLReader.forEachLine(url: URL(fileURLWithPath: path), from: from, { line in
-                guard Self.contains(line, "turn_completed") else { return }
-                records += GrokHistory.records(line: Data(line), cwd: cwd)
-            }) else { continue }
-            try db.transaction {
-                added += try count(records, provider: .grok)
-                try saveForkCursor(path, stamp: key, offset: end)
+        for (root, machine) in grokRoots {
+            var grokFiles: [(String, FileStamp)] = []
+            try Self.walkJSONL(root) { path, stamp in
+                if path.hasSuffix("/" + GrokHistory.fileName) { grokFiles.append((path, stamp)) }
+            }
+            for (path, stamp) in grokFiles {
+                let known = try forkCursor(path)
+                let key = Self.stampKey(stamp, nil)
+                guard known?.stamp != key else { continue }
+                // A file that shrank or was replaced is read again from the start; responses count once anyway.
+                let from = known.map { $0.stamp.hasPrefix("\(stamp.inode):") && $0.offset <= stamp.size ? $0.offset : 0 } ?? 0
+                var records: [HistoryRecord] = []
+                let cwd = GrokHistory.cwd(ofFile: path, root: root)
+                guard let end = try? JSONLReader.forEachLine(url: URL(fileURLWithPath: path), from: from, { line in
+                    guard Self.contains(line, "turn_completed") else { return }
+                    records += GrokHistory.records(line: Data(line), cwd: cwd)
+                }) else { continue }
+                try db.transaction {
+                    added += try count(records, provider: .grok, machine: machine)
+                    try saveForkCursor(path, stamp: key, offset: end)
+                }
             }
         }
         for path in AntigravityHistory.databases(in: antigravityRoots) {
@@ -60,22 +63,57 @@ extension UsageStore {
             let key = Self.stampKey(stamp, Self.stamp(path + "-wal"))
             guard try forkCursor(path)?.stamp != key, let records = AntigravityHistory.read(database: path) else { continue }
             try db.transaction {
-                added += try count(records, provider: .gemini)
+                added += try count(records, provider: .gemini, machine: RemoteHosts.thisMac)
                 try saveForkCursor(path, stamp: key, offset: 0)
+            }
+        }
+        for host in antigravityHosts {
+            for database in RemoteLogs.antigravityDatabases(host) ?? [] {
+                let key = Self.stampKey(database.stamp, database.wal)
+                guard try forkCursor(database.path)?.stamp != key, let records = Self.readRemote(database) else { continue }
+                try db.transaction {
+                    added += try count(records, provider: .gemini, machine: host)
+                    try saveForkCursor(database.path, stamp: key, offset: 0)
+                }
             }
         }
         return added
     }
 
+    /// A remote conversation's usage, read from a snapshot copied here and removed after. It isn't
+    /// kept: a database that changed is copied whole again anyway.
+    private static func readRemote(_ database: RemoteLogs.RemoteDatabase) -> [HistoryRecord]? {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tinybar-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // The file's name is the conversation's id, and its time stands in for a response's that has none.
+        let copy = dir.appendingPathComponent((database.path as NSString).lastPathComponent)
+        guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil,
+              (try? RemoteLogs.copyDatabase(database.path, to: copy)) != nil,
+              (try? FileManager.default.setAttributes(
+                  [.modificationDate: Date(timeIntervalSince1970: Double(database.stamp.mtime) / 1000)], ofItemAtPath: copy.path)) != nil
+        else { return nil }
+        return AntigravityHistory.read(database: copy.path)
+    }
+
+    /// Records from before other machines were read are all this Mac's.
+    private func migrateForkHistory() throws {
+        try db.exec(Self.forkHistorySchema)
+        let columns = try db.run("PRAGMA table_info(fork_record)").compactMap { $0[1].text }
+        if !columns.contains("machine") {
+            try db.exec("ALTER TABLE fork_record ADD COLUMN machine TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
     /// Adds each record, or what it holds beyond the copy already counted. Returns the new ones.
-    private func count(_ records: [HistoryRecord], provider: ProviderID) throws -> Int {
+    /// A response already counted on another machine, as a copied session holds it, stays with that one.
+    private func count(_ records: [HistoryRecord], provider: ProviderID, machine: String) throws -> Int {
         var added = 0
         for record in records {
             let quoted = record.keys.map { _ in "?" }.joined(separator: ", ")
             let existing = try db.run("SELECT record FROM fork_key WHERE key IN (\(quoted)) LIMIT 1", record.keys.map { .text($0) }).first?.first?.int
             let costMicros = record.cost.map { Int64(($0 * 1_000_000).rounded()) }
             if let id = existing, let row = try db.run(
-                "SELECT day, model, project, input, output, cache_write, cache_read, cost_micros FROM fork_record WHERE id = ?", [.int(id)]).first
+                "SELECT day, model, project, input, output, cache_write, cache_read, cost_micros, machine FROM fork_record WHERE id = ?", [.int(id)]).first
             {
                 let had = TokenCounts(input: row[3].int, output: row[4].int, cacheWrite: row[5].int, cacheRead: row[6].int)
                 let now = TokenCounts(
@@ -88,7 +126,7 @@ extension UsageStore {
                 }
                 if now != had || cost != row[7].optionalInt {
                     try addTokens(day: row[0].text ?? "", provider: provider, model: row[1].text ?? "", project: row[2].text ?? "",
-                                  machine: RemoteHosts.thisMac, { var d = now; d += -had; return d }())
+                                  machine: row[8].text ?? RemoteHosts.thisMac, { var d = now; d += -had; return d }())
                     try db.run("""
                     UPDATE fork_record SET input = ?, output = ?, cache_write = ?, cache_read = ?, cost_micros = ? WHERE id = ?
                     """, [.int(now.input), .int(now.output), .int(now.cacheWrite), .int(now.cacheRead), cost.map { .int($0) } ?? .null, .int(id)])
@@ -100,13 +138,13 @@ extension UsageStore {
             let model = ModelName.normalize(record.model)
             let project = projects.project(for: record.cwd)
             try db.run("""
-            INSERT INTO fork_record (day, provider, model, project, input, output, cache_write, cache_read, cost_micros)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO fork_record (day, provider, model, project, input, output, cache_write, cache_read, cost_micros, machine)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [.text(day), .text(provider.rawValue), .text(model), .text(project), .int(record.tokens.input), .int(record.tokens.output),
-                  .int(record.tokens.cacheWrite), .int(record.tokens.cacheRead), costMicros.map { .int($0) } ?? .null])
+                  .int(record.tokens.cacheWrite), .int(record.tokens.cacheRead), costMicros.map { .int($0) } ?? .null, .text(machine)])
             guard let id = try db.run("SELECT last_insert_rowid()").first?.first?.int else { continue }
             for key in record.keys { try db.run("INSERT OR IGNORE INTO fork_key (key, record) VALUES (?, ?)", [.text(key), .int(id)]) }
-            try addTokens(day: day, provider: provider, model: model, project: project, machine: RemoteHosts.thisMac, record.tokens)
+            try addTokens(day: day, provider: provider, model: model, project: project, machine: machine, record.tokens)
             added += 1
         }
         return added
@@ -114,19 +152,18 @@ extension UsageStore {
 
     /// What each day's rows cost as their CLI priced them, for those it priced (Grok).
     func withReportedCosts(_ rows: [DailyUsage], since: String) throws -> [DailyUsage] {
-        try db.exec(Self.forkHistorySchema)
+        try migrateForkHistory()
         var costs: [String: Double] = [:]
         for r in try db.run("""
-        SELECT day, provider, model, project, sum(cost_micros) FROM fork_record
-        WHERE day >= ? AND cost_micros IS NOT NULL GROUP BY day, provider, model, project
+        SELECT day, provider, model, project, machine, sum(cost_micros) FROM fork_record
+        WHERE day >= ? AND cost_micros IS NOT NULL GROUP BY day, provider, model, project, machine
         """, [.text(since)]) {
-            costs[[r[0].text, r[1].text, r[2].text, r[3].text].map { $0 ?? "" }.joined(separator: "\u{1F}")] = Double(r[4].int) / 1_000_000
+            costs[[r[0].text, r[1].text, r[2].text, r[3].text, r[4].text].map { $0 ?? "" }.joined(separator: "\u{1F}")] = Double(r[5].int) / 1_000_000
         }
         guard !costs.isEmpty else { return rows }
         return rows.map { row in
-            guard row.machine == RemoteHosts.thisMac else { return row }
             var row = row
-            row.reportedCost = costs[[row.day, row.provider.rawValue, row.model, row.project].joined(separator: "\u{1F}")]
+            row.reportedCost = costs[[row.day, row.provider.rawValue, row.model, row.project, row.machine].joined(separator: "\u{1F}")]
             return row
         }
     }
